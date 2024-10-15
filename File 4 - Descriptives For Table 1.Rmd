@@ -1,0 +1,269 @@
+---
+title: "Descriptives For Table 1"
+author: "Nicholas Way"
+date: "2024-02-22"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #Clear library
+
+#Load necessary packages
+library(tidyverse) #Includes dplyr, ggplot2, and other useful packages
+library(corrplot) #For correlation plots
+library(table1) #For creating summary tables
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+
+#Read in data file
+Dfinal <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/D_finalPA2016.csv") 
+```
+
+# Creating Cumulative PWB Score
+
+```{r}
+#Select only the columns you're interested in
+subset68 <- Dfinal[, c("Finance68", "Health68", "Mastery68", "Purpose68", "Optimism68", "LS68")]
+
+#Sum the values across each row in the subset, ignoring NAs
+Dfinal$Sum68 <- rowSums(subset68, na.rm = TRUE)
+
+#Selec only the columns you're interested in
+subset1012 <- Dfinal[, c("Finance1012", "Health1012", "Mastery1012", "Purpose1012", "Optimism1012", "LS1012")]
+
+#Sum the values across each row in the subset, ignoring NAs
+Dfinal$Sum1012 <- rowSums(subset1012, na.rm = TRUE)
+```
+
+# Get a five-number summary of each PA2016 and check out its distribution 
+## In general, physical activity data almost always have a large number of participants with no physical activity level.
+
+```{r}
+summary(Dfinal$PA2016)
+hist(Dfinal$PA2016)
+```
+
+# Create models for each PWB factor
+
+```{r}
+modelOpt <- lm(PA2016 ~ Optimism68 + Optimism1012 + age, data = Dfinal)
+summary(modelOpt)
+
+#Create diagnostic plots
+par(mfrow = c(2, 2)) #Organize plots in a 2x2 grid
+plot(modelOpt)
+```
+
+```{r}
+modelPurp <- lm(PA2016 ~ Purpose68 + Purpose1012 + age, data = Dfinal)
+summary(modelPurp)
+
+#Create diagnostic plots
+par(mfrow = c(2, 2)) #Organize plots in a 2x2 grid
+plot(modelPurp)
+```
+
+```{r}
+modelLS <- lm(PA2016 ~ LS68 + LS1012 + age, data = Dfinal)
+summary(modelLS)
+
+#Create diagnostic plots
+par(mfrow = c(2, 2)) #Organize plots in a 2x2 grid
+plot(modelLS)
+```
+
+```{r}
+modelFin <- lm(PA2016 ~ Finance68 + Finance1012 + age, data = Dfinal)
+summary(modelFin)
+
+#Create diagnostic plots
+par(mfrow = c(2, 2)) #Organize plots in a 2x2 grid
+plot(modelFin)
+```
+
+```{r}
+modelH <- lm(PA2016 ~ Health68 + Health1012 + age, data = Dfinal)
+summary(modelH)
+
+#Create diagnostic plots
+par(mfrow = c(2, 2)) #Organize plots in a 2x2 grid
+plot(modelH)
+```
+
+```{r}
+modelMast <- lm(PA2016 ~ Mastery68 + Mastery1012 + age +sex + Income + Race + edu, data = Dfinal)
+summary(modelMast)
+
+#Create diagnostic plots
+par(mfrow = c(2, 2)) #Organize plots in a 2x2 grid
+plot(modelMast)
+```
+
+# Correlation Matrix
+
+```{r}
+#Create correlation matrix
+Corr <- Dfinal %>%
+  select(Optimism68, Optimism1012, Purpose68, Purpose1012, LS68, LS1012, Finance68, Finance1012, Health68, Health1012, Mastery68, Mastery1012)
+ 
+Corr <- Corr[complete.cases(Corr), ]
+
+C<-cor(Corr)
+
+corrplot(C, method="circle")
+```
+
+# Table1 by exposure
+## Gain a feeling for potential effect of the exposure on covariates.
+
+```{r}
+#Create binary variables
+Dfinal$Opt_Bi68 <- ifelse(is.na(Dfinal$Optimism68), NA, ifelse(Dfinal$Optimism68 >= median(Dfinal$Optimism68, na.rm = TRUE), 1, 0))
+Dfinal$Opt_Bi1012 <- ifelse(is.na(Dfinal$Optimism1012), NA, ifelse(Dfinal$Optimism1012 >= median(Dfinal$Optimism1012, na.rm = TRUE), 1, 0))
+
+#Remove rows with NA in Opt_Bi68 or Opt_Bi1012
+DfinalOpt <- Dfinal[complete.cases(Dfinal$Opt_Bi68, Dfinal$Opt_Bi1012), ]
+```
+
+```{r}
+#Create tables
+table1(~ age + gender + edu + BMI + alc + factor(diab) + factor(smoken) + Income | Opt_Bi68, data = DfinalOpt)
+table1(~ age + gender + edu + BMI + alc + factor(diab) + factor(smoken) + Income | Opt_Bi1012, data = DfinalOpt)
+```
+
+```{r}
+#Create binary variables
+Dfinal$Purp_Bi68 <- ifelse(is.na(Dfinal$Purpose68), NA, ifelse(Dfinal$Purpose68 >= median(Dfinal$Purpose68, na.rm = TRUE), 1, 0))
+Dfinal$Purp_Bi1012 <- ifelse(is.na(Dfinal$Purpose1012), NA, ifelse(Dfinal$Purpose1012 >= median(Dfinal$Purpose1012, na.rm = TRUE), 1, 0))
+
+#Remove rows with NA in Purp_Bi68 or Purp_Bi1012
+DfinalPurp <- Dfinal[complete.cases(Dfinal$Purp_Bi68, Dfinal$Purp_Bi1012), ]
+```
+
+```{r}
+#Create tables
+table1(~ age + gender + edu + BMI + alc + factor(diab) + factor(smoken) + Income | Purp_Bi68, data = DfinalPurp)
+table1(~ age + gender + edu + BMI + alc + factor(diab) + factor(smoken) + Income | Purp_Bi1012, data = DfinalPurp)
+```
+
+# More examination of PWB variables
+
+```{r}
+#Looking for significant changes in purpose levels from two time periods
+Dfinal$Change_Purp <- Dfinal$Purpose1012 - Dfinal$Purpose68
+summary(Dfinal$Change_Purp)
+hist(Dfinal$Change_Purp)
+#There seems to be some variation within the purpose levels of participants
+#We did not use these measurement of change PWB varaibles in our models to enhnace power for multivariate analysis
+```
+
+```{r}
+#Create average PWB factor for both years
+Dfinal <- Dfinal %>%
+  mutate(
+    Optimism = (Optimism68 + Optimism1012) / 2,
+    Purpose = (Purpose68 + Purpose1012) / 2,
+    LS = (LS68 + LS1012) / 2,
+    Finance = (Finance68 + Finance1012) / 2,
+    Health = (Health68 + Health1012) / 2,
+    Mastery = (Mastery68 + Mastery1012) / 2,
+    Sum = (Sum68 + Sum1012) / 2)
+```
+
+# Find the means and standard deviations for Table 1
+
+```{r}
+mean_age <- mean(Dfinal$age, na.rm = TRUE)
+sd_age <- sd(Dfinal$age, na.rm = TRUE)
+
+gender_table <- table(Dfinal$gender)
+gender_percent <- prop.table(gender_table) * 100
+
+male_count <- gender_table["Male"]
+male_percent <- gender_percent["Male"]
+female_count <- gender_table["Female"]
+female_percent <- gender_percent["Female"]
+
+race_table <- table(Dfinal$Race)
+race_percent <- prop.table(race_table) * 100
+
+white_count <- race_table["1"]
+white_percent <- race_percent["1"]
+black_count <- race_table["2"]
+black_percent <- race_percent["2"]
+
+mean_education <- mean(Dfinal$edu, na.rm = TRUE)
+sd_education <- sd(Dfinal$edu, na.rm = TRUE)
+
+mean_income <- mean(Dfinal$Income, na.rm = TRUE)
+sd_income <- sd(Dfinal$Income, na.rm = TRUE)
+
+mean_wealth <- mean(Dfinal$Wealth, na.rm = TRUE)
+sd_wealth <- sd(Dfinal$Wealth, na.rm = TRUE)
+```
+
+```{r}
+mean_optimism <- mean(Dfinal$Optimism, na.rm = TRUE)
+sd_optimism <- sd(Dfinal$Optimism, na.rm = TRUE)
+
+mean_purpose <- mean(Dfinal$Purpose, na.rm = TRUE)
+sd_purpose <- sd(Dfinal$Purpose, na.rm = TRUE)
+
+mean_mastery <- mean(Dfinal$Mastery, na.rm = TRUE)
+sd_mastery <- sd(Dfinal$Mastery, na.rm = TRUE)
+
+mean_finance <- mean(Dfinal$Finance, na.rm = TRUE)
+sd_finance <- sd(Dfinal$Finance, na.rm = TRUE)
+
+mean_health <- mean(Dfinal$Health, na.rm = TRUE)
+sd_health <- sd(Dfinal$Health, na.rm = TRUE)
+
+mean_ls <- mean(Dfinal$LS, na.rm = TRUE)
+sd_ls <- sd(Dfinal$LS, na.rm = TRUE)
+
+mean_sum <- mean(Dfinal$Sum, na.rm = TRUE)
+sd_sum <- sd(Dfinal$Sum, na.rm = TRUE)
+```
+
+# Examine the proportions of people with missing or no wealth and income
+## We found that nearly 99% of participants had some wealth, and about 56% of the participants had no income. This makes sense when we consider the fact that we are examining retired Americans.
+
+```{r}
+#Calculate the total number of people
+total_people <- nrow(Dfinal)
+
+#Calculate the number of NA values and the percentage of NA values in Wealth
+na_wealth_count <- sum(is.na(Dfinal$Wealth))
+percentage_na_wealth <- (na_wealth_count / total_people) * 100
+
+#Calculate the number of people who reported 0 in Wealth and the percentage
+zero_wealth_count <- sum(Dfinal$Wealth == 0, na.rm = TRUE)
+percentage_zero_wealth <- (zero_wealth_count / total_people) * 100
+
+#Calculate the number of NA values and the percentage of NA values in Income
+na_income_count <- sum(is.na(Dfinal$Income))
+percentage_na_income <- (na_income_count / total_people) * 100
+
+#Calculate the number of people who reported 0 in Income and the percentage
+zero_income_count <- sum(Dfinal$Income == 0, na.rm = TRUE)
+percentage_zero_income <- (zero_income_count / total_people) * 100
+
+#Display the counts and percentages for Wealth
+cat("Number of NA values in Wealth:", na_wealth_count, "\n")
+cat("Percentage of NA values in Wealth:", percentage_na_wealth, "%\n")
+cat("Number of people with 0 Wealth:", zero_wealth_count, "\n")
+cat("Percentage of people with 0 Wealth:", percentage_zero_wealth, "%\n")
+
+#Display the counts and percentages for Income
+cat("Number of NA values in Income:", na_income_count, "\n")
+cat("Percentage of NA values in Income:", percentage_na_income, "%\n")
+cat("Number of people with 0 Income:", zero_income_count, "\n")
+cat("Percentage of people with 0 Income:", percentage_zero_income, "%\n")
+```

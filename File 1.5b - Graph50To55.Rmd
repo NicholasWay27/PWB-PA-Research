@@ -1,0 +1,283 @@
+---
+title: "Descriptives: Graph50To55"
+author: "Nicholas Way"
+date: "Fall 2023"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #Clear library
+
+#Load necessary packages
+library(tidyverse) #Includes dplyr, ggplot2, and other useful packages
+library(gtools)    #For quantcut function
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+
+#Read in data files
+Dpre <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/D_PA_10_05_2023.csv")
+Optimism <- read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/opt_06_08.csv")
+```
+
+```{r}
+#Merge Two datasets together by hhidpn
+Dpre1 <- left_join(Dpre, Optimism, by = "hhidpn") 
+
+#Filter age so we are only looking at participants that were between the ages of 50 and 55
+D <- Dpre1 %>%
+  filter(Dpre1$age >= 50 & Dpre1$age <= 55) 
+
+#Change the format of the data so that one row represents one person
+D_long <- reshape(D, 
+  varying = list(c("PA8", "PA9", "PA10", "PA11", "PA12", "PA13", "PA14", "PA15")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "long")
+
+#Create new variables
+D_long$education = ifelse(D_long$edu >= 12, "HSgrad", "LessHS")
+
+D_long$year =as.numeric(D_long$year)
+
+D_long$gender = ifelse(D_long$sex =="1", "Male", "Female")
+```
+
+```{r}
+#Look at the distribution of this age range
+ggplot(data = D, mapping = aes(x = age)) +
+  geom_histogram()
+```
+
+# Physical Activity Overview
+
+```{r}
+#Calculate mean
+mean_PA <- aggregate(PA ~ year, data = D_long, FUN = mean)
+
+#Plot the graph
+ggplot(mean_PA, aes(x = year, y = PA)) +
+  geom_line(color = "#FF5733", size = 1.5) +
+  geom_point(color = "#FF5733", size = 3, fill = "white") +
+  labs(x = "Year",
+       y = "MeanPA",
+       title = "MeanPA by Year") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Wealth Overview
+
+```{r}
+#Remove NAs in the wealth variable for this graph
+D_WealthFiltered <- D_long %>%
+  filter(!is.na(Wealth))
+
+#Divide wealth into 10 percentiles
+D_WealthFiltered$WealthPercent = quantcut(D_WealthFiltered$Wealth,q=10, na.rm = TRUE)
+
+#Convert to numeric
+D_WealthFiltered$WealthPercent = as.numeric(D_WealthFiltered$WealthPercent)
+
+#Categorize wealth groups: Top 10%, Bottom 10%, and Middle
+D_WealthFiltered$WealthGroup = ifelse(D_WealthFiltered$WealthPercent == 10, "TopTen", ifelse(D_WealthFiltered$WealthPercent == 1, "BotTen","Middle"))
+
+#Calculate mean
+mean_PA_wealth <- D_WealthFiltered %>%
+  group_by(WealthGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_wealth, mapping = aes(x = year, y = meanPA, color = as.factor(WealthGroup), group = WealthGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Wealth",
+       title = "MeanPA by Year and Wealth") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Education Overview
+
+```{r}
+#Remove NAs in education variable for this graph
+D_longFilteredEdu <- D_long %>%
+  drop_na(education)
+
+#Calculate mean
+mean_PA_edu <- D_longFilteredEdu %>%
+  group_by(education, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_edu, mapping = aes(x = year, y = meanPA, color = as.factor(education), group = education)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Education",
+       title = "MeanPA by Year and Education") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Gender Overview
+
+```{r}
+#Calculate mean
+mean_PA_gender <- D_long %>%
+  group_by(gender, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_gender, mapping = aes(x = year, y = meanPA, color = as.factor(gender), group = gender)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Gender",
+       title = "MeanPA by Year and Gender") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Race Overview
+
+```{r}
+#Remove NAs in Race vairable for this graph
+D_longFilteredRace <- D_long %>%
+  drop_na(Race)
+
+#Categorize race groups: White, Black, and Other
+D_longFilteredRace$RaceGroup = ifelse(D_longFilteredRace$Race == 1, "White", ifelse(D_longFilteredRace$Race == 2, "Black","Other"))
+
+#Calculate mean
+mean_PA_race <- D_longFilteredRace %>%
+  group_by(RaceGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_race, mapping = aes(x = year, y = meanPA, color = RaceGroup, group = RaceGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Race",
+       title = "MeanPA by Year and Race") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Hispanic Overview
+
+```{r}
+#Remove NAs in hispanic variable for this graph
+D_longHispanicFiltered <- D_long %>%
+  filter(!is.na(Hispanic))
+
+#Categorize hispanci groups: Hispanic and Not Hispanic
+D_longHispanicFiltered$HispanicGroup = ifelse(D_longHispanicFiltered$Hispanic =="1", "Hispanic", "Not Hispanic")
+
+#Calculate mean
+mean_PA_Hispanic <- D_longHispanicFiltered %>%
+  group_by(HispanicGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_Hispanic, mapping = aes(x = year, y = meanPA, color = as.factor(HispanicGroup), group = HispanicGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Hispanic Or Not",
+       title = "MeanPA by Year and Ethnicity") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Optimism (Quarters) Overview
+
+```{r}
+#Remove NAs in optimism quartile variable for this graph
+D_longoptquarterFiltered <- D_long %>%
+  filter(!is.na(opt_quart_bi))
+
+#Categorize optimism groups: Top 25% and Bottom 75%
+D_longoptquarterFiltered$opt_quart_bigroup = ifelse(D_longoptquarterFiltered$opt_quart_bi =="1", "Top 25%", "Bottom 75%")
+
+#Calculate mean
+mean_PA_optquarter <- D_longoptquarterFiltered %>%
+  group_by(opt_quart_bigroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_optquarter, mapping = aes(x = year, y = meanPA, color = as.factor(opt_quart_bigroup), group = opt_quart_bigroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Top 25% vs The Rest",
+       title = "MeanPA by Year and Optimism Level") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```
+
+# Optimism (Halfs) Overview
+
+```{r}
+#Remove NAs in optimism median variable for this graph
+D_longoptmedbiFiltered <- D_long %>%
+  filter(!is.na(opt_median_bi))
+
+#Categorize optimism groups: Top 50% and Bottom 50%
+D_longoptmedbiFiltered$opt_median_bigroup = ifelse(D_longoptmedbiFiltered$opt_median_bi =="1", "Top 50%", "Bottom 50%")
+
+#Calculate mean
+mean_PA_optmedianbi <- D_longoptmedbiFiltered %>%
+  group_by(opt_median_bigroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PA_optmedianbi, mapping = aes(x = year, y = meanPA, color = as.factor(opt_median_bigroup), group = opt_median_bigroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Top 50% vs Bottom 50%",
+       title = "MeanPA by Year and Optimism Level") + 
+  xlim(2006,2020) + 
+  ylim(7,20) + 
+  scale_x_continuous(breaks = seq(2006, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 20, by = 1)) +
+  theme_bw()
+```

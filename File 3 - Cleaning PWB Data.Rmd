@@ -1,0 +1,196 @@
+---
+title: "Cleaning PWB Data"
+author: "Nicholas Way"
+date: "2024-01-19"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #Clear library
+
+#Load necessary packages
+library(tidyverse) #Includes dplyr, ggplot2, and other useful packages
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+
+#Read in data files
+Data1012 <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/DPWB1012.csv")
+
+Data0608 <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/DPWB0608.csv")
+```
+
+```{r}
+#Create useful variables
+Data0608$year = as.numeric(Data0608$year)
+
+Data0608$gender = ifelse(Data0608$sex =="1", "Male", "Female")
+
+Data1012$year =as.numeric(Data1012$year)
+
+Data1012$gender = ifelse(Data1012$sex =="1", "Male", "Female")
+```
+
+```{r}
+#Changed PA12 to PA2014 and did so for all the PA years. Both datasets have 20710 participants
+D_wide0608 <- reshape(Data0608, 
+  varying = list(c("PA2006", "PA2008", "PA2010", "PA2012", "PA2014", "PA2016", "PA2018", "PA2020")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "wide")
+
+D_wide1012 <- reshape(Data1012, 
+  varying = list(c("PA2006", "PA2008", "PA2010", "PA2012", "PA2014", "PA2016", "PA2018", "PA2020")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "wide")
+```
+
+```{r}
+#Rename based on year group, so that we can marge later and keep track of what years we measured for the variable
+D_wide0608$Finance68 <- D_wide0608$FinalFinance
+D_wide0608$Health68 <- D_wide0608$FinalHealth
+D_wide0608$Mastery68 <- D_wide0608$FinalScoreMast
+D_wide0608$PositiveAff68 <- D_wide0608$FinalScorePA
+D_wide0608$Purpose68 <- D_wide0608$FinalScorePurp
+D_wide0608$Optimism68 <- D_wide0608$FinalScoreOpt
+D_wide0608$LS68 <- D_wide0608$FinalScoreLS
+
+#Select the specific variables we want in our dataset
+D_widef0608 <- D_wide0608 %>%
+  select(hhidpn, sex, edu, Income, age, Race, Hispanic, Wealth, diab, smoken, alc, BMI, PA2006, PA2016, gender, Finance68, Health68, Mastery68,  Purpose68, Optimism68, LS68)
+
+#Rename based on year group, so that we can marge later and keep track of what years we measured for the variable
+D_wide1012$Finance1012 <- D_wide1012$FinalFinance
+D_wide1012$Health1012 <- D_wide1012$FinalHealth
+D_wide1012$Mastery1012 <- D_wide1012$FinalScoreMast
+D_wide1012$PositiveAff1012 <- D_wide1012$FinalScorePA
+D_wide1012$Purpose1012 <- D_wide1012$FinalScorePurp
+D_wide1012$Optimism1012 <- D_wide1012$FinalScoreOpt
+D_wide1012$LS1012 <- D_wide1012$FinalScoreLS
+
+#Select the specific variables we want in our dataset
+D_widef1012 <- D_wide1012 %>%
+  select(hhidpn, sex, edu, Income, age, Race, Hispanic, Wealth, diab, smoken, alc, BMI, PA2006, PA2016, gender, Finance1012, Health1012, Mastery1012, Purpose1012, Optimism1012, LS1012)
+```
+
+```{r}
+#Perform a left join
+result <- D_widef0608 %>%
+  left_join(D_widef1012 %>% select(hhidpn, Finance1012, Health1012, Mastery1012, Purpose1012, Optimism1012, LS1012),
+            by = "hhidpn")
+
+#Check missingness
+colSums(is.na(result))/nrow(result)
+```
+
+# Filtering
+
+```{r}
+D <- result %>%
+  filter(!is.na(age) & !is.na(edu)) #Went from 20710 participants to 20623 participants
+
+D1 <- result %>%
+  filter(!is.na(age)) #Went from 20710 participants to 20710 participants
+
+D2 <- result %>%
+  filter(!is.na(edu)) #Went from 20710 participants to 20623 participants
+
+#There were a total of 87 participants with missing education, there were no participants missing age
+```
+
+# Will not use Positive Affect from the list of PWB variables because it was not measured in the 2006 collection
+
+```{r}
+#Went from 20623 participants to 6840 participants. This will be our final dataset
+D_widesub <- D2 %>%
+  filter(!is.na(Finance1012)) %>%
+  filter(!is.na(Finance68)) %>%
+  filter(!is.na(Health1012)) %>%
+  filter(!is.na(Health68)) %>%
+  filter(!is.na(Mastery1012)) %>%
+  filter(!is.na(Mastery68)) %>%
+  filter(!is.na(Purpose1012)) %>%
+  filter(!is.na(Purpose68)) %>%
+  filter(!is.na(Optimism1012)) %>%
+  filter(!is.na(Optimism68)) %>%
+  filter(!is.na(LS1012)) %>%
+  filter(!is.na(LS68)) %>% 
+  filter(!is.na(PA2016)) 
+```
+
+# Examine the number of participants in each filter of NAs
+
+```{r}
+DFinance <- D2 %>%                   #Went from 20623 participants to 7544 participants
+  filter(!is.na(Finance1012)) %>%
+  filter(!is.na(Finance68)) %>%
+  filter(!is.na(PA2016)) 
+
+DHealth <- D2 %>%                    #Went from 20623 participants to 7342 participants
+  filter(!is.na(Health1012)) %>%
+  filter(!is.na(Health68)) %>%
+  filter(!is.na(PA2016)) 
+
+DMastery <- D2 %>%                   #Went from 20623 participants to 7625 participants
+  filter(!is.na(Mastery1012)) %>%
+  filter(!is.na(Mastery68)) %>%
+  filter(!is.na(PA2016)) 
+
+DPurpose <- D2 %>%                   #Went from 20623 participants to 7516 participants
+  filter(!is.na(Purpose1012)) %>%
+  filter(!is.na(Purpose68)) %>%
+  filter(!is.na(PA2016)) 
+
+DOptimism <- D2 %>%                  #Went from 20623 participants to 7568 participants
+  filter(!is.na(Optimism1012)) %>%
+  filter(!is.na(Optimism68)) %>%
+  filter(!is.na(PA2016)) 
+
+DLS <- D2 %>%                        #Went from 20623 participants to 7620 participants
+  filter(!is.na(LS1012)) %>%
+  filter(!is.na(LS68)) %>% 
+  filter(!is.na(PA2016)) 
+```
+
+# Check the missing in each variable
+## Missing higher than 30% is usually concerning. 
+
+```{r}
+colSums(is.na(D_widesub))/nrow(D_widesub)
+```
+
+# Get a five-number summary of each PWB variable 
+
+```{r}
+summary(D_widesub$Optimism68)
+summary(D_widesub$Finance68)
+summary(D_widesub$Health68)
+summary(D_widesub$Mastery68)
+summary(D_widesub$PositiveAff68)
+summary(D_widesub$Purpose68)
+summary(D_widesub$LS68)
+
+summary(D_widesub$Optimism1012)
+summary(D_widesub$Finance1012)
+summary(D_widesub$Health1012)
+summary(D_widesub$Mastery1012)
+summary(D_widesub$PositiveAff1012)
+summary(D_widesub$Purpose1012)
+summary(D_widesub$LS1012)
+```
+
+# Write CSV Files
+
+```{r}
+#write.csv(D_widesub, "D_finalPA2016.csv")
+#write.csv(D, "Dpre_FinalPA2016.csv")
+```

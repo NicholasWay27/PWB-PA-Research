@@ -1,0 +1,503 @@
+---
+title: "Descriptives"
+author: "Nicholas Way"
+date: "Fall 2023"
+output: html_document
+---
+
+# The Health and Retirement Study (HRS) is a long-term survey conducted in the United States. It collects data on health, economic, and social aspects of adults as they age. The study began in 1992 and focuses on a nationally representative sample of individuals born between 1931 and 1941. Participants are interviewed every two years to gather information on health, income, retirement, and family dynamics. The HRS provides valuable insights into the relationships between health, economics, and retirement decisions, shaping policies and research on aging in the US.
+
+## wave 8 = 2006
+## wave 9 = 2008
+## wave 10 = 2010
+## wave 11 = 2012
+## wave 12 = 2014
+## wave 13 = 2016
+## wave 14 = 2018
+## wave 15 = 2020
+
+## sex: 1=male, 2=female
+
+```{r}
+rm(list = ls()) #Clear library
+
+#Load necessary packages
+library(tidyverse) #Includes dplyr, ggplot2, and other useful packages
+library(gtools)    #For quantcut function
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+
+#Read in data files
+Dpre <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/D.csv")
+Optimism <- read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/opt_06_08.csv")
+```
+
+```{r}
+#Merge two datasets together by hhidpn
+Dpre1 <- left_join(Dpre, Optimism, by = "hhidpn") #We removed a total of 963 duplicate rows to end with 42406 participants
+
+Dpre1 <- Dpre1[!duplicated(Dpre1$hhidpn), ]
+
+D <- Dpre1 %>%
+  filter(!(is.na(PA13))) #From 42406 many participants, we removed participants to end with 20710 participants
+
+#Change the format of the data so that one row represents one person
+D_long <- reshape(D, 
+  varying = list(c("PA8", "PA9", "PA10", "PA11", "PA12", "PA13", "PA14", "PA15")), 
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "long")
+
+#Create new variables
+D_long$education = ifelse(D_long$edu >= 12, "HSgrad", "LessHS")
+
+D_long$year =as.numeric(D_long$year)
+
+D_long$gender = ifelse(D_long$sex =="1", "Male", "Female")
+
+#Split data into two year groups
+#(2008-2014)
+#(2014-2020)
+Dfirstsix <- D_long %>%
+  filter(year >= 2008 & year <= 2014)
+Dlastsix <- D_long %>%
+  filter(year >= 2014 & year <= 2020)
+```
+
+```{r}
+#Check which year PA to use, looking at different levels of missingn for each year chosen to filter, decided to use 2016
+SubsetD <- D  %>%filter(!is.na(PA13)) 
+
+SubsetD <- SubsetD %>% select(hhidpn, PA8, PA9, PA10, PA11, PA12, PA13, PA14, PA15)
+
+sapply(SubsetD, function(x) sum(is.na(x)))/ nrow(SubsetD)
+```
+
+# Check the missing in each variable. 
+## Missing higher than 30% is usually concerning.
+
+```{r}
+sapply(D, function(x) sum(is.na(x)))/nrow(D)
+```
+
+# Physical Activity Overview
+
+```{r}
+mean_PA <- aggregate(PA ~ year, data = D_long, FUN = mean)
+
+#Plot the graph with customizations
+ggplot(mean_PA, aes(x = year, y = PA)) +
+  geom_line(color = "#FF5733", linewidth = 1.5) +
+  geom_point(color = "#FF5733", size = 3, fill = "white") +
+  labs(x = "Year", y = "Mean PA") +
+  ggtitle("Mean PA by Year") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 14),axis.text = element_text(size = 12),
+    axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Age Overview
+
+```{r}
+#Filter NAs from age
+DageFiltered <- D_long %>% #Filtering NAs from age
+  filter(!is.na(agegroups))
+
+#Calculate means
+mean_PAagegroups <- DageFiltered %>% #Creating means
+  group_by(agegroups, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graph
+ggplot(data = mean_PAagegroups, mapping = aes(x = year, y = meanPA, color = as.factor(agegroups), group = agegroups)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Age Groups",
+       title = "MeanPA by Year and Age") + 
+  xlim(2008,2020) + 
+  scale_x_continuous(breaks = seq(2008, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 18, by = 1)) +
+  theme_bw()
+
+ggplot(data = D, mapping = aes(x = age)) + 
+  geom_histogram(color = "black", fill = "white", bins = 40 )
+
+#Made a graph for the three age groups (Less than 60, 60-70, Older than 70)
+#We would eventually switch the age brackets (Less than 50, 50-55, Older than 70??)
+```
+
+# Wealth Overview
+
+```{r}
+#Filter data for the first period (2008-2014), excluding rows with missing wealth values
+Dfirst_WealthFiltered <- Dfirstsix %>%
+  filter(!is.na(Wealth))
+
+#Divide wealth into 10 percentiles
+Dfirst_WealthFiltered$WealthPercent = quantcut(Dfirst_WealthFiltered$Wealth,q=10, na.rm = TRUE)
+
+#Convert to numeric
+Dfirst_WealthFiltered$WealthPercent = as.numeric(Dfirst_WealthFiltered$WealthPercent)
+
+#Categorize wealth groups: Top 10%, Bottom 10%, and Middle
+Dfirst_WealthFiltered$WealthGroup = ifelse(Dfirst_WealthFiltered$WealthPercent == 10, "TopTen", ifelse(Dfirst_WealthFiltered$WealthPercent == 1, "BotTen","Middle"))
+
+#Calculate mean
+mean_PAfirst_wealth <- Dfirst_WealthFiltered %>%
+  group_by(WealthGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Filter data for the first period (2014-2020), excluding rows with missing wealth values
+Dsecond_WealthFiltered <- Dlastsix %>%
+  filter(!is.na(Wealth))
+
+#Divide wealth into 10 percentiles
+Dsecond_WealthFiltered$WealthPercent = quantcut(Dsecond_WealthFiltered$Wealth,q=10, na.rm = TRUE)
+
+#Convert to numeric
+Dsecond_WealthFiltered$WealthPercent = as.numeric(Dsecond_WealthFiltered$WealthPercent)
+
+#Categorize wealth groups: Top 10%, Bottom 10%, and Middle
+Dsecond_WealthFiltered$WealthGroup = ifelse(Dsecond_WealthFiltered$WealthPercent == 10, "TopTen", ifelse(Dsecond_WealthFiltered$WealthPercent == 1, "BotTen","Middle"))
+
+#Calculate mean
+mean_PAsecond_wealth <- Dsecond_WealthFiltered %>%
+  group_by(WealthGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graphs
+ggplot(data = mean_PAfirst_wealth, mapping = aes(x = year, y = meanPA, color = as.factor(WealthGroup), group = WealthGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Wealth",
+       title = "MeanPA by Year and Wealth") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 18, by = 1)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_wealth, mapping = aes(x = year, y = meanPA, color = as.factor(WealthGroup), group = WealthGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Wealth",
+       title = "MeanPA by Year and Wealth") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(7, 18, by = 1)) +
+  theme_bw()
+```
+
+# Education Overview
+
+```{r}
+#Filter out rows with missing education values for the first period (2008-2014)
+D_longFilteredEdu1 <- Dfirstsix %>%
+  drop_na(education)
+
+#Calculate mean
+mean_PAfirst_edu <- D_longFilteredEdu1 %>%
+  group_by(education, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Filter out rows with missing education values for the second period (2014-2020)
+D_longFilteredEdu2 <- Dlastsix %>%
+  drop_na(education)
+#Calculate mean
+mean_PAsecond_edu <- D_longFilteredEdu2 %>%
+  group_by(education, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graphs
+ggplot(data = mean_PAfirst_edu, mapping = aes(x = year, y = meanPA, color = as.factor(education), group = education)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Education",
+       title = "MeanPA by Year and Education") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(9, 14, by = .5)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_edu, mapping = aes(x = year, y = meanPA, color = as.factor(education), group = education)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Education",
+       title = "MeanPA by Year and Education") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(9, 14, by = .5)) +
+  theme_bw()
+```
+
+# Gender Overview
+
+```{r}
+#Caclulate means
+mean_PAfirst_gender <- Dfirstsix %>%
+  group_by(gender, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+mean_PAsecond_gender <- Dlastsix %>%
+  group_by(gender, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graphs
+ggplot(data = mean_PAfirst_gender, mapping = aes(x = year, y = meanPA, color = as.factor(gender), group = gender)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Gender",
+       title = "MeanPA by Year and Gender") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(10, 14, by = .5)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_gender, mapping = aes(x = year, y = meanPA, color = as.factor(gender), group = gender)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Gender",
+       title = "MeanPA by Year and Gender") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(10, 14, by = .5)) +
+  theme_bw()
+```
+
+# Race Overview
+
+```{r}
+#Filter out rows with missing race values for the first period (2008-2014)
+D_longFilteredRace1 <- Dfirstsix %>%
+  drop_na(Race)
+
+#Categorize race groups: White, Black, and Other
+D_longFilteredRace1$RaceGroup = ifelse(D_longFilteredRace1$Race == 1, "White", ifelse(D_longFilteredRace1$Race == 2, "Black","Other"))
+
+#Calclulate mean
+mean_PAfirst_race <- D_longFilteredRace1 %>%
+  group_by(RaceGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+# Filter out rows with missing race values for the second period (2014-2020)
+D_longFilteredRace2 <- Dlastsix %>%
+  drop_na(Race)
+
+#Categorize race groups: White, Black, and Other
+D_longFilteredRace2$RaceGroup = ifelse(D_longFilteredRace2$Race == 1, "White", ifelse(D_longFilteredRace2$Race == 2, "Black","Other"))
+
+#Calculate mean
+mean_PAsecond_race <- D_longFilteredRace2 %>%
+  group_by(RaceGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Calculate means
+ggplot(data = mean_PAfirst_race, mapping = aes(x = year, y = meanPA, color = RaceGroup, group = RaceGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Race",
+       title = "MeanPA by Year and Race") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(9, 14, by = 1)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_race, mapping = aes(x = year, y = meanPA, color = RaceGroup, group = RaceGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Race",
+       title = "MeanPA by Year and Race") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(9, 14, by = 1)) +
+  theme_bw()
+```
+
+# Hispanic Overview
+
+```{r}
+#Filter out rows with missing Hispanic values for the first period (2008-2014)
+D_longHispanicFiltered1 <- Dfirstsix %>%
+  filter(!is.na(Hispanic))
+
+#Categorize Hispanic groups: Hispanic and Not Hispanic
+D_longHispanicFiltered1$HispanicGroup = ifelse(D_longHispanicFiltered1$Hispanic =="1", "Hispanic", "Not Hispanic")
+
+#Calculate mean
+mean_PAfirst_Hispanic <- D_longHispanicFiltered1 %>%
+  group_by(HispanicGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+# Filter out rows with missing Hispanic values for the second period (2014-2020)
+D_longHispanicFiltered2 <- Dlastsix %>%
+  filter(!is.na(Hispanic))
+
+#Categorize Hispanic groups: Hispanic and Not Hispanic
+D_longHispanicFiltered2$HispanicGroup = ifelse(D_longHispanicFiltered2$Hispanic =="1", "Hispanic", "Not Hispanic")
+
+#Calculate mean
+mean_PAsecond_Hispanic <- D_longHispanicFiltered2 %>%
+  group_by(HispanicGroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graphs
+ggplot(data = mean_PAfirst_Hispanic, mapping = aes(x = year, y = meanPA, color = as.factor(HispanicGroup), group = HispanicGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Hispanic Or Not",
+       title = "MeanPA by Year and Ethnicity") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(11, 13, by = .25)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_Hispanic, mapping = aes(x = year, y = meanPA, color = as.factor(HispanicGroup), group = HispanicGroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Hispanic Or Not",
+       title = "MeanPA by Year and Ethnicity") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(11, 13, by = .5)) +
+  theme_bw()
+```
+
+# Optimism (Quarters) Overview
+
+```{r}
+#Filter out rows with missing optimism quartile values for the first period (2008-2014)
+D_longoptquarterFiltered1 <- Dfirstsix %>%
+  filter(!is.na(opt_quart_bi))
+
+#Categorize optimism groups: Top 25% and Bottom 75%
+D_longoptquarterFiltered1$opt_quart_bigroup = ifelse(D_longoptquarterFiltered1$opt_quart_bi =="1", "Top 25%", "Bottom 75%")
+
+#Calculate mean
+mean_PAfirst_optquarter <- D_longoptquarterFiltered1 %>%
+  group_by(opt_quart_bigroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Filter out rows with missing optimism quartile values for the second  period (2014-2020)
+D_longoptquarterFiltered2 <- Dlastsix %>%
+  filter(!is.na(opt_quart_bi))
+
+#Categorize optimism groups: Top 25% and Bottom 75%
+D_longoptquarterFiltered2$opt_quart_bigroup = ifelse(D_longoptquarterFiltered2$opt_quart_bi =="1", "Top 25%", "Bottom 75%")
+
+#Calculate mean
+mean_PAsecond_optquarter <- D_longoptquarterFiltered2 %>%
+  group_by(opt_quart_bigroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graphs
+ggplot(data = mean_PAfirst_optquarter, mapping = aes(x = year, y = meanPA, color = as.factor(opt_quart_bigroup), group = opt_quart_bigroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Top 25% vs The Rest",
+       title = "MeanPA by Year and Optimism Level") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(11, 15, by = .5)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_optquarter, mapping = aes(x = year, y = meanPA, color = as.factor(opt_quart_bigroup), group = opt_quart_bigroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Top 25% vs The Rest",
+       title = "MeanPA by Year and Optimism Level") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(11, 15, by = .5)) +
+  theme_bw()
+```
+
+# Optimism (Halfs) Overview
+
+```{r}
+#Filter out rows with missing optimism median values for the first period (2008-2014)
+D_longoptmedbiFiltered1 <- Dfirstsix %>%
+  filter(!is.na(opt_median_bi))
+
+#Categorize optimism groups: Top 50% and Bottom 50%
+D_longoptmedbiFiltered1$opt_median_bigroup = ifelse(D_longoptmedbiFiltered1$opt_median_bi =="1", "Top 50%", "Bottom 50%")
+
+#Calculate mean
+mean_PAfirst_optmedianbi <- D_longoptmedbiFiltered1 %>%
+  group_by(opt_median_bigroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Filter out rows with missing optimism median values for the second period (2014-2020)
+D_longoptmedbiFiltered2 <- Dlastsix %>%
+  filter(!is.na(opt_median_bi))
+
+#Categorize optimism groups: Top 50% and Bottom 50%
+D_longoptmedbiFiltered2$opt_median_bigroup = ifelse(D_longoptmedbiFiltered2$opt_median_bi =="1", "Top 50%", "Bottom 50%")
+
+#Calculate mean
+mean_PAsecond_optmedianbi <- D_longoptmedbiFiltered2 %>%
+  group_by(opt_median_bigroup, year) %>%
+  summarize(meanPA = mean(PA, na.rm = TRUE))
+
+#Plot the graphs
+ggplot(data = mean_PAfirst_optmedianbi, mapping = aes(x = year, y = meanPA, color = as.factor(opt_median_bigroup), group = opt_median_bigroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Top 50% vs Bottom 50%",
+       title = "MeanPA by Year and Optimism Level") + 
+  xlim(2008,2014) + 
+  scale_x_continuous(breaks = seq(2008, 2014, by = 2)) +
+  scale_y_continuous(breaks = seq(10, 15, by = .5)) +
+  theme_bw()
+
+ggplot(data = mean_PAsecond_optmedianbi, mapping = aes(x = year, y = meanPA, color = as.factor(opt_median_bigroup), group = opt_median_bigroup)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Year",
+       y = "MeanPA",
+       color = "Top 50% vs Bottom 50%",
+       title = "MeanPA by Year and Optimism Level") + 
+  xlim(2014,2020) + 
+  scale_x_continuous(breaks = seq(2014, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(10, 15, by = .5)) +
+  theme_bw()
+```
+
+# Thursday,  October 26, 2023
+Started by looking over the plots split up by age groups <60, 60-70, and >70. Noticed a dip in mean PA for ages <60 at years 2008-2014. Decided to filter and dive into the age groups of 50-60 and then 50-55, where we saw the expected trends for different factors such as wealth, education level, race, gender, optimism. However, we still see this strange dip in PA from years 2008-2014, followed by a rise or flattening out in PA for the following years. What other factors could be in play to cause/affect this? We are going to grab and organize some psychological variables from other data sets and see if these have any meaningful effect on PA. Right now we have our data set D filtered with no missingness in PA13(year 2016), which keeps the missingness for the other years below 35% which is good.

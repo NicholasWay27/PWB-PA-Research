@@ -1,0 +1,343 @@
+---
+title: "Purpose Models"
+author: "Nicholas Way"
+date: "2024-03-22"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #Clear library
+
+#Load necessary packages
+library(tidyverse)    #Includes dplyr, ggplot2, and other useful packages
+library(forestplot)   #For creating forest plots
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+
+#Read in pre final data file
+Dprefinal <- read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/Dpre_FinalPA2016.csv")
+
+Dfinal2 <- Dprefinal %>%                    
+  filter(!is.na(Purpose1012)) %>%
+  filter(!is.na(Purpose68)) %>%
+  filter(!is.na(PA2016)) 
+#Went from 20623 participants to 7516 participants
+
+#Read in final data file
+Dfinal <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/D_finalPA2016.csv")
+```
+
+# Recoding For Stratified Analysis
+## Does the effect of Purpose on phyisical activity differ based on education, gender, or age?
+
+```{r}
+#Standardize the variables
+Dfinal$Purpose68 = scale(Dfinal$Purpose68, center = TRUE, scale = TRUE)
+Dfinal$Purpose1012 = scale(Dfinal$Purpose1012, center = TRUE, scale = TRUE)
+
+#Create new variable groups
+Dfinal$education = ifelse(Dfinal$edu >= 13, "College and Above", "Less than College")
+
+Dfinal$gender = ifelse(Dfinal$sex =="1", "Male", "Female")
+
+Dfinal_younger <-subset(Dfinal, age <= 65)
+Dfinal_older <-subset(Dfinal, age > 65)
+
+Dfinal_male <-subset(Dfinal, gender == "Male")
+Dfinal_female <-subset(Dfinal, gender == "Female")
+
+Dfinal_collabove <-subset(Dfinal, education == "College and Above")
+Dfinal_collbelow <-subset(Dfinal, education == "Less than College")
+```
+
+## Model 1
+
+```{r}
+model1 <- lm(PA2016 ~ Purpose68 + Purpose1012, data = Dfinal)
+summary(model1)
+```
+
+## Model 2
+
+```{r}
+model2 <- lm(PA2016 ~ Purpose68 + Purpose1012 + age + sex, data = Dfinal)
+summary(model2)
+```
+
+## Model 3
+
+```{r}
+model3 <- lm(PA2016 ~ Purpose68 + Purpose1012 + age + sex + Income + edu + Race + Wealth, data = Dfinal)
+summary(model3)
+
+#Diagnostic plots
+par(mfrow = c(2, 2)) #Organizes plots in a 2x2 grid
+plot(model3)
+```
+
+```{r}
+#Create stratified models
+model3zyoung <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + edu + Race, data = Dfinal_younger)
+summary(model3zyoung)
+
+model3zold <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + edu + Race, data = Dfinal_older)
+summary(model3zold)
+
+model3zmale <- lm(PA2016 ~ Purpose68 + Purpose1012  + age + Income + edu + Race, data = Dfinal_male)
+summary(model3zmale)
+
+model3zfemale <- lm(PA2016 ~ Purpose68 + Purpose1012  + age + Income + edu + Race, data = Dfinal_female)
+summary(model3zfemale)
+
+model3zcollabove <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + age + Race, data = Dfinal_collabove)
+summary(model3zcollabove)
+
+model3zcollbelow <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + age + Race, data = Dfinal_collbelow)
+summary(model3zcollbelow)
+```
+
+```{r}
+#Figure out the medians so that we can create new variable groups
+summary(Dfinal$Income)
+summary(Dfinal$Wealth)
+
+#Create new variable groups
+Dfinal$IncomeLevels = ifelse(Dfinal$Income > 0, "Positive Income", "No Income")
+
+Dfinal$WealthLevels = ifelse(Dfinal$Wealth >= 270000, "MedianOrAbove", "BelowMedian")
+
+Dfinal_PosIncome <-subset(Dfinal, IncomeLevels == "Positive Income")
+Dfinal_NoIncome <-subset(Dfinal, IncomeLevels == "No Income")
+
+Dfinal_WealthAbove <-subset(Dfinal, WealthLevels == "MedianOrAbove")
+Dfinal_WealthBelow <-subset(Dfinal, WealthLevels == "BelowMedian")
+
+DfinalRace <- Dfinal %>%
+  filter(Dfinal$Race == 1 | Dfinal$Race == 2)
+
+Dfinal_White <-subset(DfinalRace, Race == 1)
+Dfinal_Black <-subset(DfinalRace, Race == 2)
+```
+
+```{r}
+#Create more stratified models
+model3zPosIncome <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + edu + Race, data = Dfinal_PosIncome)
+summary(model3zPosIncome)
+
+model3zNoIncome <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + edu + Race, data = Dfinal_NoIncome)
+summary(model3zNoIncome)
+
+model3zWhite <- lm(PA2016 ~ Purpose68 + Purpose1012  + age + Income + edu + Race, data = Dfinal_White)
+summary(model3zWhite)
+
+model3zBlack <- lm(PA2016 ~ Purpose68 + Purpose1012  + age + Income + edu + Race, data = Dfinal_Black)
+summary(model3zBlack)
+
+model3zWealthAbove <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + age + Race, data = Dfinal_WealthAbove)
+summary(model3zWealthAbove)
+
+model3zWealthBelow <- lm(PA2016 ~ Purpose68 + Purpose1012  + sex + Income + age + Race, data = Dfinal_WealthBelow)
+summary(model3zWealthBelow)
+```
+
+```{r}
+#Calculate 95% confidence intervals for the coefficients
+#Print the confidence intervals
+
+conf_model3zyoung <- confint(model3zyoung, level = 0.95)
+print(conf_model3zyoung)
+
+conf_model3zold <- confint(model3zold, level = 0.95)
+print(conf_model3zold)
+
+conf_model3zmale <- confint(model3zmale, level = 0.95)
+print(conf_model3zmale)
+
+conf_model3zfemale <- confint(model3zfemale, level = 0.95)
+print(conf_model3zfemale)
+
+conf_model3zPosIncome <- confint(model3zPosIncome, level = 0.95)
+print(conf_model3zPosIncome)
+
+conf_model3zNoIncome <- confint(model3zNoIncome, level = 0.95)
+print(conf_model3zNoIncome)
+
+conf_model3zcollabove <- confint(model3zcollabove, level = 0.95)
+print(conf_model3zcollabove)
+
+conf_model3zcollbelow <- confint(model3zcollbelow, level = 0.95)
+print(conf_model3zcollbelow)
+
+conf_model3zWhite <- confint(model3zWhite, level = 0.95)
+print(conf_model3zWhite)
+
+conf_model3zBlack <- confint(model3zBlack, level = 0.95)
+print(conf_model3zBlack)
+
+conf_model3zWealthAbove <- confint(model3zWealthAbove, level = 0.95)
+print(conf_model3zWealthAbove)
+
+conf_model3zWealthBelow <- confint(model3zWealthBelow, level = 0.95)
+print(conf_model3zWealthBelow)
+```
+
+# Testing Interaction Between Purpose and Social Demographic Factors
+## Evaluate the p value of Purpose*factor
+
+## Model 4a
+
+```{r}
+model4a <- lm(PA2016 ~ Purpose68 + Purpose1012*age + sex + Income + edu + Race + Wealth , data = Dfinal)
+summary(model4a)
+```
+
+## Model 4s
+
+```{r}
+model4s <- lm(PA2016 ~ Purpose68 + Purpose1012*sex + age + Income + edu + Race + Wealth , data = Dfinal)
+summary(model4s)
+```
+
+## Model 4i
+
+```{r}
+model4i <- lm(PA2016 ~ Purpose68 + Purpose1012*Income + age + sex + edu + Race + Wealth , data = Dfinal)
+summary(model4i)
+```
+
+## Model 4e
+
+```{r}
+model4e <- lm(PA2016 ~ Purpose68 + Purpose1012*edu + age + sex + Income + Race + Wealth , data = Dfinal)
+summary(model4e)
+```
+
+## Model 4r
+
+```{r}
+model4r <- lm(PA2016 ~ Purpose68 + Purpose1012*Race + age + sex + edu + Income + Wealth , data = Dfinal)
+summary(model4r)
+```
+
+## Model 4w
+
+```{r}
+model4w <- lm(PA2016 ~ Purpose68 + Purpose1012*Wealth + age + sex + edu + Race + Income , data = Dfinal)
+summary(model4w)
+```
+
+# Forest Plot
+
+```{r}
+#Extracting coefficients and confidence intervals for "Purpose1012" from each model
+ci1 <- confint(model3zyoung, "Purpose1012", level = 0.95)
+ci2 <- confint(model3zold, "Purpose1012", level = 0.95)
+ci3 <- confint(model3zmale, "Purpose1012", level = 0.95)
+ci4 <- confint(model3zfemale, "Purpose1012", level = 0.95)
+ci5 <- confint(model3zPosIncome, "Purpose1012", level = 0.95)
+ci6 <- confint(model3zNoIncome, "Purpose1012", level = 0.95)
+ci7 <- confint(model3zcollabove, "Purpose1012", level = 0.95)
+ci8 <- confint(model3zcollbelow, "Purpose1012", level = 0.95)
+ci9 <- confint(model3zWhite, "Purpose1012", level = 0.95)
+ci10 <- confint(model3zBlack, "Purpose1012", level = 0.95)
+ci11 <- confint(model3zWealthAbove, "Purpose1012", level = 0.95)
+ci12 <- confint(model3zWealthBelow, "Purpose1012", level = 0.95)
+
+#Combine the confidence intervals into a data frame in the desired order
+df_combined <- bind_rows(
+  data.frame(Term = "Purpose1012", Model = "model3zWealthBelow", Estimate = coef(model3zWealthBelow)["Purpose1012"], CI.Lower = ci12[1], CI.Upper = ci12[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zWealthAbove", Estimate = coef(model3zWealthAbove)["Purpose1012"], CI.Lower = ci11[1], CI.Upper = ci11[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zNoIncome", Estimate = coef(model3zNoIncome)["Purpose1012"], CI.Lower = ci6[1], CI.Upper = ci6[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zPosIncome", Estimate = coef(model3zPosIncome)["Purpose1012"], CI.Lower = ci5[1], CI.Upper = ci5[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zcollbelow", Estimate = coef(model3zcollbelow)["Purpose1012"], CI.Lower = ci8[1], CI.Upper = ci8[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zcollabove", Estimate = coef(model3zcollabove)["Purpose1012"], CI.Lower = ci7[1], CI.Upper = ci7[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zBlack", Estimate = coef(model3zBlack)["Purpose1012"], CI.Lower = ci10[1], CI.Upper = ci10[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zWhite", Estimate = coef(model3zWhite)["Purpose1012"], CI.Lower = ci9[1], CI.Upper = ci9[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zfemale", Estimate = coef(model3zfemale)["Purpose1012"], CI.Lower = ci4[1], CI.Upper = ci4[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zmale", Estimate = coef(model3zmale)["Purpose1012"], CI.Lower = ci3[1], CI.Upper = ci3[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zold", Estimate = coef(model3zold)["Purpose1012"], CI.Lower = ci2[1], CI.Upper = ci2[2]),
+  data.frame(Term = "Purpose1012", Model = "model3zyoung", Estimate = coef(model3zyoung)["Purpose1012"], CI.Lower = ci1[1], CI.Upper = ci1[2])
+)
+
+#Define the common y-axis range for all plots
+y_range <- c(0.5, nrow(df_combined) + 0.5)
+
+#Reorder df_combined to match the custom labels
+df_combined <- df_combined %>%
+  arrange(factor(Model, levels = c(
+    "model3zWealthBelow",
+    "model3zWealthAbove",
+    "model3zNoIncome",
+    "model3zPosIncome",
+    "model3zcollbelow",
+    "model3zcollabove",
+    "model3zBlack",
+    "model3zWhite",
+    "model3zfemale",
+    "model3zmale",
+    "model3zold",
+    "model3zyoung"
+  )))
+
+#Define neutral colors for each pair of models
+df_combined$color <- case_when(
+  df_combined$Model %in% c("model3zWealthBelow", "model3zWealthAbove") ~ "#8da0cb",  # muted blue
+  df_combined$Model %in% c("model3zNoIncome", "model3zPosIncome") ~ "#66c2a5",      # muted green
+  df_combined$Model %in% c("model3zcollbelow", "model3zcollabove") ~ "#fc8d62",      # muted orange
+  df_combined$Model %in% c("model3zBlack", "model3zWhite") ~ "#e78ac3",             # muted pink
+  df_combined$Model %in% c("model3zfemale", "model3zmale") ~ "#a6d854",             # muted lime
+  df_combined$Model %in% c("model3zold", "model3zyoung") ~ "grey60",               # muted yellow
+  TRUE ~ "black"  # default color for any other models
+)
+
+#Custom labels for the models
+custom_labels <- c(
+  "Wealth < Median",
+  "Wealth >= Median", 
+  "No Income",
+  "Some Income",
+  "No College",
+  "College And Above",
+  "Black",
+  "White",
+  "Female",
+  "Male",
+  "Old: age > 65",
+  "Young: age <= 65"
+)
+
+#Custom forest plot with base R
+par(mar = c(5, 10, 5, 10), oma = c(0, 0, 0, 0)) # Adjust margins: c(bottom, left, top, right)
+plot(c(df_combined$CI.Lower, df_combined$CI.Upper), 
+     rep(1:nrow(df_combined), each=2), 
+     type = "n", 
+     xlab = "Coefficient Estimate for 'Purpose'", 
+     ylab = "", 
+     xaxt = "n", 
+     yaxt = "n", 
+     xlim = c(-1, 2),
+     ylim = y_range) # Adjust y-axis limits
+
+#Add confidence intervals and points
+for (i in 1:nrow(df_combined)) {
+  segments(df_combined$CI.Lower[i], i, df_combined$CI.Upper[i], i, col = df_combined$color[i], lwd = 2)
+  points(df_combined$Estimate[i], i, pch = 15, col = df_combined$color[i], cex = 1.5)
+}
+
+#Add a dotted line at 0
+abline(v = 0, lty = 2, col = "black")
+
+#Add labels
+axis(1, cex.axis = 0.8)  #Adjust x-axis font size
+axis(2, at = 1:nrow(df_combined), labels = custom_labels, las = 1, tick = FALSE, line = -0.5, cex.axis = 0.8)  #Adjust y-axis font size
+mtext("Models", side = 2, line = 8, at = nrow(df_combined)/2, cex = 1)  #Adjust font size
+mtext("Effects of Purpose on Physical Activity", side = 3, line = -3, outer = TRUE, cex = 1, font = 2)  #Adjust title font size
+mtext("Stratified by Sociodemographic Factors", side = 3, line = -4, outer = TRUE, cex = 1, font = 2)  #Adjust subtitle font size
+```

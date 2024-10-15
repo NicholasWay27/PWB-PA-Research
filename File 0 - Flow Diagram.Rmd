@@ -1,0 +1,939 @@
+---
+title: "Flow Diagram"
+author: "Nicholas Way"
+date: "2024-04-12"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #Clear library
+
+#Load necessary packages
+library(tidyverse) #Includes dplyr, ggplot2, and other useful packages
+library(corrplot) #For correlation plots
+library(table1) #For creating summary tables
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+```
+
+```{r}
+library(readr)
+library(foreign)
+library(haven)
+library(dplyr)
+library(tableone)
+library(lubridate)
+library(gtools)
+select <-dplyr::select
+filter <-dplyr::filter
+arrange<-dplyr::arrange
+rename<-dplyr::rename
+mutate<-dplyr::mutate
+summarise <-dplyr::summarise
+group_by<-dplyr::group_by
+```
+
+# File 1 - Merge
+
+```{r}
+#Read in data file
+HRS_rand <- read_sas("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Raw data/randhrs1992_2020v1.sas7bdat") #Read data file
+
+#R7VGACTX - variable name for vigirous physical activity
+
+#R8IWBEG is "interview bieing date" in wave 8 (i.e., 2006). This was changed as dates, and using origin="1960-01-01" yielded correct year.
+#Codebook for rand HRS, "randhrs1992_2016v1.pdf", in page 107, it states that "RwIWBEG, RwIWMID, and RwIWEND are in SAS date format, which is the number of days relative to January 1, 1960.
+ 
+HRS_rand$R8IWBEG<-as.Date(HRS_rand$R8IWBEG, origin="1960-01-01")
+HRS_rand$R9IWBEG<-as.Date(HRS_rand$R9IWBEG, origin="1960-01-01")
+HRS_rand$R10IWBEG<-as.Date(HRS_rand$R10IWBEG, origin="1960-01-01")
+HRS_rand$R11IWBEG<-as.Date(HRS_rand$R11IWBEG, origin="1960-01-01")
+HRS_rand$R12IWBEG<-as.Date(HRS_rand$R12IWBEG, origin="1960-01-01")
+HRS_rand$R13IWBEG<-as.Date(HRS_rand$R13IWBEG, origin="1960-01-01")
+```
+
+## Selecting variables
+
+```{r}
+HRS_rand$hhidpn <- as.numeric(paste(HRS_rand$HHID, HRS_rand $PN, sep = ""))
+
+#From rand HRS, I grabbed baseline variable for loneliness and needed covariates. "R8" incinerates year 2006 or baseline of this study.
+
+D = HRS_rand %>%
+  select(hhidpn, 
+         R7VGACTX, R7MDACTX, R7LTACTX,    #Physical activity variables. 
+         R8VGACTX, R8MDACTX, R8LTACTX,  
+         R9VGACTX, R9MDACTX, R9LTACTX,
+         R10VGACTX, R10MDACTX, R10LTACTX,
+         R11VGACTX, R11MDACTX, R11LTACTX,
+         R12VGACTX, R12MDACTX, R12LTACTX,
+         R13VGACTX, R13MDACTX, R13LTACTX,
+         R14VGACTX, R14MDACTX, R14LTACTX,
+         R15VGACTX, R15MDACTX, R15LTACTX,
+        R8AGEY_B,  
+         RARACEM, RAHISPAN, #Race, Hispanic or not, 
+         R1AGEY_B,R2AGEY_B,R3AGEY_B,R4AGEY_B,R5AGEY_B,R6AGEY_B,
+         R7AGEY_B,R8AGEY_B,R9AGEY_B,R10AGEY_B,R11AGEY_B,R12AGEY_B,R13AGEY_B,R14AGEY_B, #age
+        R2WTRESP, R8WTRESP, R13WTRESP, RAESTRAT,RAEHSAMP, #survey weights
+         RAGENDER,RAEDYRS,R8MSTAT,    #gender, years of education, and marrital status
+         R8IWBEG,R9IWBEG,R10IWBEG,R11IWBEG,R12IWBEG,R14IWBEG,R13IWBEG, #"interview begin dates"
+         R8IEARN,H8ATOTB,       #income and wealth                     
+         R8DIAB, R8HIBP, R8BMI, R8SMOKEN, R8DRINKD,) #health conditions: diatetes, hypertension, BMI, smoke now, drinking
+```
+
+```{r}
+#Compute missing age values for wave 8 (R8AGEY_B) using age data from other waves
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R7AGEY_B+2,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R9AGEY_B-2,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R10AGEY_B-4,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R11AGEY_B-6,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R12AGEY_B-8,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R13AGEY_B-10,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R14AGEY_B-12,D$R8AGEY_B )
+#This ensures that missing values are filled using the most relevant and recent available data
+```
+
+```{r}
+#Calculate physical activity levels for each wave (8 to 15)
+#Light activity (LT), moderate activity (MOD), and vigorous activity (VIG)
+#Scores are assigned based on the given criteria for each activity type
+
+D$LT8 = ifelse(D$R8LTACTX ==5, 0,
+         ifelse(D$R8LTACTX ==4, 0.5,
+         ifelse(D$R8LTACTX ==3, 1,
+         ifelse(D$R8LTACTX ==2, 4,7))))
+D$MOD8 = ifelse(D$R8MDACTX ==5, 0,
+         ifelse(D$R8MDACTX ==4, 1,
+         ifelse(D$R8MDACTX ==3, 2,
+         ifelse(D$R8MDACTX ==2, 8,14))))
+D$VIG8 = ifelse(D$R8VGACTX ==5, 0,
+         ifelse(D$R8VGACTX ==4, 2,
+         ifelse(D$R8VGACTX ==3, 4,
+         ifelse(D$R8VGACTX ==2, 16,28))))
+
+D$PA8 =  D$LT8 + D$MOD8 + D$VIG8
+
+D$LT9 = ifelse(D$R9LTACTX ==5, 0,
+         ifelse(D$R9LTACTX ==4, 0.5,
+         ifelse(D$R9LTACTX ==3, 1,
+         ifelse(D$R9LTACTX ==2, 4,7))))
+D$MOD9 = ifelse(D$R9MDACTX ==5, 0,
+         ifelse(D$R9MDACTX ==4, 1,
+         ifelse(D$R9MDACTX ==3, 2,
+         ifelse(D$R9MDACTX ==2, 8,14))))
+D$VIG9 = ifelse(D$R9VGACTX ==5, 0,
+         ifelse(D$R9VGACTX ==4, 2,
+         ifelse(D$R9VGACTX ==3, 4,
+         ifelse(D$R9VGACTX ==2, 16,28))))
+
+D$PA9 =  D$LT9 + D$MOD9 + D$VIG9
+
+D$LT10 = ifelse(D$R10LTACTX ==5, 0,
+         ifelse(D$R10LTACTX ==4, 0.5,
+         ifelse(D$R10LTACTX ==3, 1,
+         ifelse(D$R10LTACTX ==2, 4,7))))
+D$MOD10 = ifelse(D$R10MDACTX ==5, 0,
+         ifelse(D$R10MDACTX ==4, 1,
+         ifelse(D$R10MDACTX ==3, 2,
+         ifelse(D$R10MDACTX ==2, 8,14))))
+D$VIG10 = ifelse(D$R10VGACTX ==5, 0,
+         ifelse(D$R10VGACTX ==4, 2,
+         ifelse(D$R10VGACTX ==3, 4,
+         ifelse(D$R10VGACTX ==2, 16,28))))
+
+D$PA10 =  D$LT10 + D$MOD10 + D$VIG10
+
+D$LT11 = ifelse(D$R11LTACTX ==5, 0,
+         ifelse(D$R11LTACTX ==4, 0.5,
+         ifelse(D$R11LTACTX ==3, 1,
+         ifelse(D$R11LTACTX ==2, 4,7))))
+D$MOD11 = ifelse(D$R11MDACTX ==5, 0,
+         ifelse(D$R11MDACTX ==4, 1,
+         ifelse(D$R11MDACTX ==3, 2,
+         ifelse(D$R11MDACTX ==2, 8,14))))
+D$VIG11 = ifelse(D$R11VGACTX ==5, 0,
+         ifelse(D$R11VGACTX ==4, 2,
+         ifelse(D$R11VGACTX ==3, 4,
+         ifelse(D$R11VGACTX ==2, 16,28))))
+
+D$PA11 =  D$LT11 + D$MOD11 + D$VIG11
+
+D$LT12 = ifelse(D$R12LTACTX ==5, 0,
+         ifelse(D$R12LTACTX ==4, 0.5,
+         ifelse(D$R12LTACTX ==3, 1,
+         ifelse(D$R12LTACTX ==2, 4,7))))
+D$MOD12 = ifelse(D$R12MDACTX ==5, 0,
+         ifelse(D$R12MDACTX ==4, 1,
+         ifelse(D$R12MDACTX ==3, 2,
+         ifelse(D$R12MDACTX ==2, 8,14))))
+D$VIG12 = ifelse(D$R12VGACTX ==5, 0,
+         ifelse(D$R12VGACTX ==4, 2,
+         ifelse(D$R12VGACTX ==3, 4,
+         ifelse(D$R12VGACTX ==2, 16,28))))
+
+D$PA12 =  D$LT12 + D$MOD12 + D$VIG12
+
+D$LT13 = ifelse(D$R13LTACTX ==5, 0,
+         ifelse(D$R13LTACTX ==4, 0.5,
+         ifelse(D$R13LTACTX ==3, 1,
+         ifelse(D$R13LTACTX ==2, 4,7))))
+D$MOD13 = ifelse(D$R13MDACTX ==5, 0,
+         ifelse(D$R13MDACTX ==4, 1,
+         ifelse(D$R13MDACTX ==3, 2,
+         ifelse(D$R13MDACTX ==2, 8,14))))
+D$VIG13 = ifelse(D$R13VGACTX ==5, 0,
+         ifelse(D$R13VGACTX ==4, 2,
+         ifelse(D$R13VGACTX ==3, 4,
+         ifelse(D$R13VGACTX ==2, 16,28))))
+
+D$PA13 =  D$LT13 + D$MOD13 + D$VIG13
+
+D$LT14 = ifelse(D$R14LTACTX ==5, 0,
+         ifelse(D$R14LTACTX ==4, 0.5,
+         ifelse(D$R14LTACTX ==3, 1,
+         ifelse(D$R14LTACTX ==2, 4,7))))
+D$MOD14 = ifelse(D$R14MDACTX ==5, 0,
+         ifelse(D$R14MDACTX ==4, 1,
+         ifelse(D$R14MDACTX ==3, 2,
+         ifelse(D$R14MDACTX ==2, 8,14))))
+D$VIG14 = ifelse(D$R14VGACTX ==5, 0,
+         ifelse(D$R14VGACTX ==4, 2,
+         ifelse(D$R14VGACTX ==3, 4,
+         ifelse(D$R14VGACTX ==2, 16,28))))
+
+D$PA14 =  D$LT14 + D$MOD14 + D$VIG14
+
+D$LT15 = ifelse(D$R15LTACTX ==5, 0,
+         ifelse(D$R15LTACTX ==4, 0.5,
+         ifelse(D$R15LTACTX ==3, 1,
+         ifelse(D$R15LTACTX ==2, 4,7))))
+D$MOD15 = ifelse(D$R15MDACTX ==5, 0,
+         ifelse(D$R15MDACTX ==4, 1,
+         ifelse(D$R15MDACTX ==3, 2,
+         ifelse(D$R15MDACTX ==2, 8,14))))
+D$VIG15 = ifelse(D$R15VGACTX ==5, 0,
+         ifelse(D$R15VGACTX ==4, 2,
+         ifelse(D$R15VGACTX ==3, 4,
+         ifelse(D$R15VGACTX ==2, 16,28))))
+
+D$PA15 =  D$LT15 + D$MOD15 + D$VIG15
+
+#Renaming variables
+
+D <- D %>%rename(sex=RAGENDER)
+D <- D %>%rename(Race=RARACEM)
+D <- D %>%rename(Hispanic=RAHISPAN)
+D <- D %>%rename(edu=RAEDYRS)
+
+
+D <- D %>%rename(diab=R8DIAB)
+D <- D %>%rename(HTN=R8HIBP)
+D <- D %>%rename(BMI=R8BMI)
+D <- D %>%rename(age=R8AGEY_B)
+D <- D %>%rename(smoken=R8SMOKEN)
+D <- D %>%rename(alc=R8DRINKD)
+D <- D %>%rename(Income=R8IEARN)
+D <- D %>%rename(Wealth=H8ATOTB)
+D <- D %>%rename(marr_stat=R8MSTAT)
+```
+
+## Write CSV File - D
+
+```{r}
+#write.csv(D, "C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/Dpre.csv")
+```
+
+
+# File 2a - LB0609 Extract 
+
+```{r}
+#Read in data files
+Dpre <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/D.csv")
+
+D <- Dpre %>%
+  filter(!(is.na(PA13))) #42406 participants to 20710
+
+#Change the format of the data so that one row represents one person
+D_long <- reshape(D, 
+  varying = list(c("PA8", "PA9", "PA10", "PA11", "PA12", "PA13", "PA14", "PA15")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "long")
+```
+
+```{r}
+#Read in data files
+D6<-read_dta("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Raw data/H06LB_R.dta")
+D8<-read_dta("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Raw data/H08LB_R.dta")
+
+#Convert to numeric
+D6$hhidpn <- as.numeric(paste(D6$HHID, D6$PN, sep = ""))
+D8$hhidpn <- as.numeric(paste(D8$HHID, D8$PN, sep = ""))
+
+#LLB027C Q27C. DETERMINED
+#LLB027D Q27D. ENTHUSIASTIC
+#LLB027F Q27F. ACTIVE
+#LLB027G Q27G. PROUD
+#LLB027H Q27H. INTERESTED
+#LLB027K Q27K. HAPPY
+#LLB027P Q27P. ATTENTIVE
+#LLB027Q Q27Q. CONTENT
+#LLB027T Q27T. INSPIRED
+#LLB027U Q27U. HOPEFUL
+#LLB027V Q27V. ALERT
+#LLB027X Q27X. CALM
+#LLB027Y Q27Y. EXCITED
+
+#LLB003A Q03A. LIFE IS CLOSE TO IDEAL
+#LLB003B Q03B. CONDITIONS OF LIFE ARE EXCELLENT
+#LLB003C Q03C. SATISFIED WITH LIFE
+#LLB003D Q03D. HAVE IMPORTANT THINGS IN LIFE
+#LLB003E Q03E. CHANGE NOTHING IF LIVED LIFE OVER
+
+#LLB019F Q19F. SOMETHING CAN GO WRONG FOR ME
+#LLB019G Q19G. OPTIMISTIC ABOUT OWN FUTURE
+#LLB019H Q19H. EXPECT THE BEST IN UNCERTAIN TIMES
+#LLB019I Q19I. EXPECT MORE GOOD THINGS TO HAPPEN
+#LLB019J Q19J. HARDLY EXPECT THINGS TO GO MY WAY
+#LLB019K Q19K. RARELY COUNT ON GOOD THINGS
+
+#LLB035A Q35A. I enjoy making plans for the future and working to make them a reality.
+#LLB035C Q35C. I am an active person in carrying out the plans I set for myself.
+#LLB035G Q35G. I have a sense of direction and purpose in my life.
+#LLB035B Q35B. DAILY ACTIVITIES SEEM TRIVIAL
+#LLB035D Q35D. NO GOOD SENSE TRYING TO ACCOMPLISH
+#LLB035E Q35E. DONE ALL THERE IS TO DO IN LIFE
+#LLB035F Q35F. LIVE LIFE ONE DAY AT A TIME
+
+#LLB023A Q23A. DO ANYTHING I SET MY MIND TO
+#LLB023B Q23B. USUALLY FIND A WAY TO SUCCEED
+#LLB023C Q23C. GET WHAT I WANT IS IN MY OWN HANDS
+#LLB023D Q23D. THE FUTURE DEPENDS ON ME
+#LLB023E Q23E. DO THINGS THAT I WANT TO DO
+
+#LLB024 Q24. AMOUNT OF CONTROL OVER HEALTH
+
+#LLB026 Q26. CONTROL OVER FINANCIAL SITUATION
+
+#Select the needed variables
+D6 <- D6 %>% select(hhidpn, KLB003A, KLB003B, KLB003C, KLB003D, KLB003E, KLB019F, KLB019G, KLB019H, KLB019I, KLB019J, KLB019K, KLB035A, KLB035C, KLB035G, KLB035B, KLB035D, KLB035E, KLB035F, KLB023A, KLB023B, KLB023C, KLB023D, KLB023E, KLB024, KLB026)
+D8 <- D8 %>% select(hhidpn, LLB027C, LLB027D, LLB027F, LLB027G, LLB027H, LLB027K, LLB027P, LLB027Q, LLB027T, LLB027U, LLB027V, LLB027X, LLB027Y, LLB003A, LLB003B, LLB003C, LLB003D, LLB003E, LLB019F, LLB019G, LLB019H, LLB019I, LLB019J, LLB019K, LLB035A, LLB035C, LLB035G, LLB035B, LLB035D, LLB035E, LLB035F, LLB023A, LLB023B, LLB023C, LLB023D, LLB023E, LLB024, LLB026)
+```
+
+## Merge 2006 and 2008 data
+### This is because questionniare of psychosocial factors were asked every two years to random of sub sample. so we're combining 2006 and 2008 data and calling this 2006/2008 or 68 meausrure.
+
+```{r}
+D68 <- merge(x = D8, y = D6, by  = "hhidpn", all.x = TRUE, all.y = TRUE )
+
+D68$deter_C <-  D68$LLB027C
+D68$enthu_D <- D68$LLB027D
+D68$active_F <- D68$LLB027F
+D68$proud_G <- D68$LLB027G
+D68$inter_H <-  D68$LLB027H
+D68$happy_K <- D68$LLB027K
+D68$attent_P <- D68$LLB027P
+D68$cont_Q <- D68$LLB027Q
+D68$insp_T <- D68$LLB027T
+D68$hope_U <- D68$LLB027U
+D68$alert_V <- D68$LLB027V
+D68$calm_X <- D68$LLB027X
+D68$excite_Y <- D68$LLB027Y
+
+D68$life_ideal <- ifelse(is.na(D68$LLB003A), D68$KLB003A, D68$LLB003A)
+D68$life_excel <- ifelse(is.na(D68$LLB003B), D68$KLB003B, D68$LLB003B)
+D68$life_satisf <- ifelse(is.na(D68$LLB003C), D68$KLB003C, D68$LLB003C)
+D68$life_import <- ifelse(is.na(D68$LLB003D), D68$KLB003D, D68$LLB003D)
+D68$life_nochange <- ifelse(is.na(D68$LLB003E), D68$KLB003E, D68$LLB003E)
+
+D68$opt_can <- ifelse(is.na(D68$LLB019F), D68$KLB019F, D68$LLB019F)
+D68$opt_always <- ifelse(is.na(D68$LLB019G), D68$KLB019G, D68$LLB019G)
+D68$opt_uncer <- ifelse(is.na(D68$LLB019H), D68$KLB019H, D68$LLB019H)
+D68$opt_more <- ifelse(is.na(D68$LLB019I), D68$KLB019I, D68$LLB019I)
+D68$opt_hardly <- ifelse(is.na(D68$LLB019J), D68$KLB019J, D68$LLB019J)
+D68$opt_rarely <- ifelse(is.na(D68$LLB019K), D68$KLB019K, D68$LLB019K)
+
+D68$purp_enjoy <- ifelse(is.na(D68$LLB035A), D68$KLB035A, D68$LLB035A)
+D68$purp_active <- ifelse(is.na(D68$LLB035C), D68$KLB035C, D68$LLB035C)
+D68$purp_sense <- ifelse(is.na(D68$LLB035G), D68$KLB035G, D68$LLB035G)
+D68$purp_triv <- ifelse(is.na(D68$LLB035B), D68$KLB035B, D68$LLB035B)
+D68$purp_nogood <- ifelse(is.na(D68$LLB035D), D68$KLB035D, D68$LLB035D)
+D68$purp_done <- ifelse(is.na(D68$LLB035E), D68$KLB035E, D68$LLB035E)
+D68$purp_oneday <- ifelse(is.na(D68$LLB035F), D68$KLB035F, D68$LLB035F)
+
+D68$mast_anything <- ifelse(is.na(D68$LLB023A), D68$KLB023A, D68$LLB023A)
+D68$mast_usual <- ifelse(is.na(D68$LLB023B), D68$KLB023B, D68$LLB023B)
+D68$mast_hands <- ifelse(is.na(D68$LLB023C), D68$KLB023C, D68$LLB023C)
+D68$mast_me <- ifelse(is.na(D68$LLB023D), D68$KLB023D, D68$LLB023D)
+D68$mast_iwant <- ifelse(is.na(D68$LLB023E), D68$KLB023E, D68$LLB023E)
+
+D68$FinalHealth <- ifelse(is.na(D68$LLB024), D68$KLB024, D68$LLB024)
+
+D68$FinalFinance <- ifelse(is.na(D68$LLB026), D68$KLB026, D68$LLB026)
+```
+
+## Positive Affect
+### Create an index of positive affect by reverse-coding items Q27c, d, f, g, h, k, p, q, t, u, v, x, and y and averaging the scores across all 13 items. Set the final score to missing if there are more than six items with missing values.
+
+```{r}
+D68$CalcPA <- rowMeans(D68[, c("deter_C", "enthu_D", "active_F", "proud_G", "inter_H", "happy_K", "attent_P", "cont_Q", "insp_T", "hope_U", "alert_V", "calm_X", "excite_Y")], na.rm = TRUE)
+
+DPositive <- D68 %>%
+  select(hhidpn, deter_C, enthu_D, active_F, proud_G, inter_H, happy_K, attent_P, cont_Q, insp_T, hope_U, alert_V, calm_X, excite_Y, CalcPA)
+
+na_count <- rowSums(is.na(DPositive))
+DPositive$na_count <- na_count
+
+DPositive <- DPositive %>%
+  mutate(FinalScorePA = ifelse(na_count > 6, "Missing", CalcPA))
+```
+
+## Life Satisfaction
+### Create an index of life satisfaction by averaging the scored across all 5 items, set the final score to missing if there are Three or more items with missing values.
+
+```{r}
+D68$CalcLS <- rowMeans(D68[, c("life_excel", "life_satisf",  "life_import", "life_nochange",  "life_ideal")], na.rm = TRUE)
+
+DLifeSat <- D68 %>%
+  select(hhidpn, life_ideal, life_excel, life_satisf, life_import, life_nochange, CalcLS)
+
+na_count <- rowSums(is.na(DLifeSat))
+DLifeSat$na_count <- na_count
+
+DLifeSat <- DLifeSat %>%
+  mutate(FinalScoreLS = ifelse(na_count >= 3, "Missing", CalcLS))
+```
+
+## Optimism
+### Creat an idex of optimism by averaging the scores across items Q19g, Q19h, and Q19i. Set the optimism score to mssing if there is more than one item with missing values.
+
+```{r}
+#Reverse code
+D68$opt_can_r <- 7 - D68$opt_can
+D68$opt_hardly_r <- 7 - D68$opt_hardly
+D68$opt_rarely_r <- 7 - D68$opt_rarely
+
+#Make sure code worked correctly
+table(D68$opt_can_r)
+table(D68$opt_can)
+```
+
+```{r}
+#Finish creating the variable
+D68$CalcOpt <- rowMeans(D68[, c("opt_can_r",  "opt_always",  "opt_uncer",  "opt_more",  "opt_hardly_r",  "opt_rarely_r")], na.rm = TRUE)
+
+DOptimism <- D68 %>%
+  select(hhidpn, opt_can_r, opt_always, opt_uncer, opt_more, opt_hardly_r, opt_rarely_r, CalcOpt)
+
+na_count <- rowSums(is.na(DOptimism))
+DOptimism$na_count <- na_count
+
+DOptimism <- DOptimism %>%
+  mutate(FinalScoreOpt = ifelse(na_count > 2, "Missing", CalcOpt))
+```
+
+## Purpose in life
+### Reverse-code items 35 b, d, e, and f and then average the scores across items to create an index of well-being (ranging from 1-6), with a high score indicating positive well-being. Set the final score to missing if there are more than three items with missing values.
+
+```{r}
+#Reverse code
+
+D68$purp_oneday_r <- 7 - D68$purp_oneday
+D68$purp_done_r <- 7 - D68$purp_done
+D68$purp_nogood_r <- 7 - D68$purp_nogood
+D68$purp_triv_r <- 7 - D68$purp_triv
+
+#Make sure code worked correctly
+table(D68$purp_oneday)
+table(D68$purp_oneday_r)
+```
+
+```{r}
+#Finsih creating the variable
+D68$CalcPurp <- rowMeans(D68[, c("purp_enjoy", "purp_active", "purp_sense", "purp_oneday_r", "purp_done_r",  "purp_nogood_r",  "purp_triv_r")], na.rm = TRUE)
+
+DPurpose <- D68 %>%
+  select(hhidpn, purp_enjoy, purp_active, purp_sense, purp_triv_r, purp_nogood_r, purp_done_r, purp_oneday_r, CalcPurp)
+
+na_count <- rowSums(is.na(DPurpose))
+DPurpose$na_count <- na_count
+
+DPurpose <- DPurpose %>%
+  mutate(FinalScorePurp = ifelse(na_count > 3, "Missing", CalcPurp))
+```
+
+## Mastery
+### Create an index of Mastery by averaging the scores across items Q23a-Q23e. Set the final score to missing if there are more than three items with missing values. 
+
+```{r}
+D68$CalcMast <- rowMeans(D68[, c("mast_iwant",  "mast_me",  "mast_hands",  "mast_usual",  "mast_anything")], na.rm = TRUE)
+
+DMastery <- D68 %>%
+  select(hhidpn, mast_anything, mast_usual, mast_hands, mast_me, mast_iwant, CalcMast)
+
+na_count <- rowSums(is.na(DMastery))
+DMastery$na_count <- na_count
+
+DMastery <- DMastery %>%
+  mutate(FinalScoreMast = ifelse(na_count > 3, "Missing", CalcMast))
+```
+
+## Health Mastery
+### Do not need to calculate average, just one question Q24.
+
+## Financial Mastery
+### Do not need to calculate average, just one question Q26.
+
+## Create Final data file with everything needed
+
+```{r}
+#Join multiple data frames
+list_df = list(D68, DLifeSat, DMastery, DOptimism, DPositive, DPurpose)
+df2 <- Reduce(function(x, y) merge(x, y, by = "hhidpn"), list_df)
+```
+
+```{r}
+#Select the specific variables we want in our dataset
+PWB <- df2 %>%
+  select(hhidpn, FinalScorePA, FinalScorePurp, FinalScoreOpt, FinalScoreMast, FinalScoreLS, FinalHealth, FinalFinance)
+
+PWB[PWB == "Missing"] <- NA # Replace blank & space by NA
+```
+
+```{r}
+#Merging Two datasets together by hhidpn
+DPWB <- merge(x = PWB, y = D_long, by  = "hhidpn", all.y = TRUE )
+```
+
+## Write CSV File
+
+```{r}
+#write.csv(DPWB, "DPWB0608.csv")
+```
+
+# File 2b - LB1012 Extract
+
+```{r}
+#Read in data files
+Dpre <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/D_PA_10_05_2023.csv")
+
+D <- Dpre %>%
+  filter(!(is.na(PA13))) #42406 participants to 20710
+
+#Change the format of the data so that one row represents one person
+D_long <- reshape(D, 
+  varying = list(c("PA8", "PA9", "PA10", "PA11", "PA12", "PA13", "PA14", "PA15")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "long")
+```
+
+```{r}
+#Read in data files
+D12<-read_dta("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Raw data/H12LB_R.dta")
+D10<-read_dta("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Raw data/H10LB_R.dta")
+
+#Convert to numeric
+D12$hhidpn <- as.numeric(paste(D12$HHID, D12$PN, sep = ""))
+D10$hhidpn <- as.numeric(paste(D10$HHID, D10$PN, sep = ""))
+
+#MLB027C Q27C. DETERMINED
+#MLB027D Q27D. ENTHUSIASTIC
+#MLB027F Q27F. ACTIVE
+#MLB027G Q27G. PROUD
+#MLB027H Q27H. INTERESTED
+#MLB027K Q27K. HAPPY
+#MLB027P Q27P. ATTENTIVE
+#MLB027Q Q27Q. CONTENT
+#MLB027T Q27T. INSPIRED
+#MLB027U Q27U. HOPEFUL
+#MLB027V Q27V. ALERT
+#MLB027X Q27X. CALM
+#MLB027Y Q27Y. EXCITED
+
+#MLB003A Q03A. LIFE IS CLOSE TO IDEAL
+#MLB003B Q03B. CONDITIONS OF LIFE ARE EXCELLENT
+#MLB003C Q03C. SATISFIED WITH LIFE
+#MLB003D Q03D. HAVE IMPORTANT THINGS IN LIFE
+#MLB003E Q03E. CHANGE NOTHING IF LIVED LIFE OVER
+
+#MLB019F Q19F. SOMETHING CAN GO WRONG FOR ME
+#MLB019G Q19G. OPTIMISTIC ABOUT OWN FUTURE
+#MLB019H Q19H. EXPECT THE BEST IN UNCERTAIN TIMES
+#MLB019I Q19I. EXPECT MORE GOOD THINGS TO HAPPEN
+#MLB019J Q19J. HARDLY EXPECT THINGS TO GO MY WAY
+#MLB019K Q19K. RARELY COUNT ON GOOD THINGS
+
+
+#MLB035A Q35A. I enjoy making plans for the future and working to make them a reality.
+#MLB035C Q35C. I am an active person in carrying out the plans I set for myself.
+#MLB035G Q35G. I have a sense of direction and purpose in my life.
+#MLB035B Q35B. DAILY ACTIVITIES SEEM TRIVIAL
+#MLB035D Q35D. NO GOOD SENSE TRYING TO ACCOMPLISH
+#MLB035E Q35E. DONE ALL THERE IS TO DO IN LIFE
+#MLB035F Q35F. LIVE LIFE ONE DAY AT A TIME
+
+#MLB023A Q23A. DO ANYTHING I SET MY MIND TO
+#MLB023B Q23B. USUALLY FIND A WAY TO SUCCEED
+#MLB023C Q23C. GET WHAT I WANT IS IN MY OWN HANDS
+#MLB023D Q23D. THE FUTURE DEPENDS ON ME
+#MLB023E Q23E. DO THINGS THAT I WANT TO DO
+
+#MLB024 Q24. AMOUNT OF CONTROL OVER HEALTH
+
+#MLB026 Q26. CONTROL OVER FINANCIAL SITUATION
+
+#Select the needed variables
+D12 <- D12 %>% select(hhidpn, NLB027C, NLB027D, NLB027F, NLB027G, NLB027H, NLB027K, NLB027P, NLB027Q, NLB027T, NLB027U, NLB027V, NLB027X, NLB027Y, NLB003A, NLB003B, NLB003C, NLB003D, NLB003E, NLB019F, NLB019G, NLB019H, NLB019I, NLB019J, NLB019K, NLB035A, NLB035C, NLB035G,NLB035B, NLB035D, NLB035E, NLB035F, NLB023A, NLB023B, NLB023C, NLB023D, NLB023E, NLB024, NLB026)
+D10 <- D10 %>% select(hhidpn, MLB027C, MLB027D, MLB027F, MLB027G, MLB027H, MLB027K, MLB027P, MLB027Q, MLB027T, MLB027U, MLB027V, MLB027X, MLB027Y, MLB003A, MLB003B, MLB003C, MLB003D, MLB003E, MLB019F, MLB019G, MLB019H, MLB019I, MLB019J, MLB019K, MLB035A, MLB035C, MLB035G, MLB035B, MLB035D, MLB035E, MLB035F, MLB023A, MLB023B, MLB023C, MLB023D, MLB023E, MLB024, MLB026)
+```
+
+## Merge 2010 and 2012 data. 
+### This is because questionniare of psychosocial factors were asked every two years to random of sub sample. so we're combining 2010 and 2012 data and calling this 2010/2012 or 1012 meausrure.
+
+```{r}
+D1012 <- merge(x = D10, y = D12, by  = "hhidpn", all.x = TRUE, all.y = TRUE )
+
+D1012$deter_C <- ifelse(is.na(D1012$MLB027C), D1012$NLB027C, D1012$MLB027C)
+D1012$enthu_D <- ifelse(is.na(D1012$MLB027D), D1012$NLB027D, D1012$MLB027D)
+D1012$active_F <- ifelse(is.na(D1012$MLB027F), D1012$NLB027F, D1012$MLB027F)
+D1012$proud_G <- ifelse(is.na(D1012$MLB027G), D1012$NLB027G, D1012$MLB027G)
+D1012$inter_H <- ifelse(is.na(D1012$MLB027H), D1012$NLB027H, D1012$MLB027H)
+D1012$happy_K <- ifelse(is.na(D1012$MLB027K), D1012$NLB027K, D1012$MLB027K)
+D1012$attent_P <- ifelse(is.na(D1012$MLB027P), D1012$NLB027P, D1012$MLB027P)
+D1012$cont_Q <- ifelse(is.na(D1012$MLB027Q), D1012$NLB027Q, D1012$MLB027Q)
+D1012$insp_T <- ifelse(is.na(D1012$MLB027T), D1012$NLB027T, D1012$MLB027T)
+D1012$hope_U <- ifelse(is.na(D1012$MLB027U), D1012$NLB027U, D1012$MLB027U)
+D1012$alert_V <- ifelse(is.na(D1012$MLB027V), D1012$NLB027V, D1012$MLB027V)
+D1012$calm_X <- ifelse(is.na(D1012$MLB027X), D1012$NLB027X, D1012$MLB027X)
+D1012$excite_Y <- ifelse(is.na(D1012$MLB027Y), D1012$NLB027Y, D1012$MLB027Y)
+
+D1012$life_ideal <- ifelse(is.na(D1012$MLB003A), D1012$NLB003A, D1012$MLB003A)
+D1012$life_excel <- ifelse(is.na(D1012$MLB003B), D1012$NLB003B, D1012$MLB003B)
+D1012$life_satisf <- ifelse(is.na(D1012$MLB003C), D1012$NLB003C, D1012$MLB003C)
+D1012$life_import <- ifelse(is.na(D1012$MLB003D), D1012$NLB003D, D1012$MLB003D)
+D1012$life_nochange <- ifelse(is.na(D1012$MLB003E), D1012$NLB003E, D1012$MLB003E)
+
+D1012$opt_can <- ifelse(is.na(D1012$MLB019F), D1012$NLB019F, D1012$MLB019F)
+D1012$opt_always <- ifelse(is.na(D1012$MLB019G), D1012$NLB019G, D1012$MLB019G)
+D1012$opt_uncer <- ifelse(is.na(D1012$MLB019H), D1012$NLB019H, D1012$MLB019H)
+D1012$opt_more <- ifelse(is.na(D1012$MLB019I), D1012$NLB019I, D1012$MLB019I)
+D1012$opt_hardly <- ifelse(is.na(D1012$MLB019J), D1012$NLB019J, D1012$MLB019J)
+D1012$opt_rarely <- ifelse(is.na(D1012$MLB019K), D1012$NLB019K, D1012$MLB019K)
+
+D1012$purp_enjoy <- ifelse(is.na(D1012$MLB035A), D1012$NLB035A, D1012$MLB035A) 
+D1012$purp_active <- ifelse(is.na(D1012$MLB035C), D1012$NLB035C, D1012$MLB035C) 
+D1012$purp_sense <- ifelse(is.na(D1012$MLB035G), D1012$NLB035G, D1012$MLB035G) 
+D1012$purp_triv <- ifelse(is.na(D1012$MLB035B), D1012$NLB035B, D1012$MLB035B) #b
+D1012$purp_nogood <- ifelse(is.na(D1012$MLB035D), D1012$NLB035D, D1012$MLB035D) #d
+D1012$purp_done <- ifelse(is.na(D1012$MLB035E), D1012$NLB035E, D1012$MLB035E) #e
+D1012$purp_oneday <- ifelse(is.na(D1012$MLB035F), D1012$NLB035F, D1012$MLB035F) #f
+
+D1012$mast_anything <- ifelse(is.na(D1012$MLB023A), D1012$NLB023A, D1012$MLB023A)
+D1012$mast_usual <- ifelse(is.na(D1012$MLB023B), D1012$NLB023B, D1012$MLB023B)
+D1012$mast_hands <- ifelse(is.na(D1012$MLB023C), D1012$NLB023C, D1012$MLB023C)
+D1012$mast_me <- ifelse(is.na(D1012$MLB023D), D1012$NLB023D, D1012$MLB023D)
+D1012$mast_iwant <- ifelse(is.na(D1012$MLB023E), D1012$NLB023E, D1012$MLB023E)
+
+D1012$FinalHealth <- ifelse(is.na(D1012$MLB024), D1012$NLB024, D1012$MLB024)
+
+D1012$FinalFinance <- ifelse(is.na(D1012$MLB026), D1012$NLB026, D1012$MLB026)
+```
+
+## Positive Affect
+### Create an index of positive affect by reverse-coding items Q27c, d, f, g, h, k, p, q, t, u, v, x, and y and averaging the scores across all 13 items. Set the final score to missing if there are more than six items with missing values.
+
+```{r}
+D1012$CalcPA <- rowMeans(D1012[, c("deter_C", "enthu_D", "active_F", "proud_G", "inter_H", "happy_K", "attent_P", "cont_Q", "insp_T", "hope_U", "alert_V", "calm_X", "excite_Y")], na.rm = TRUE)
+
+DPositive <- D1012 %>%
+  select(hhidpn, deter_C, enthu_D, active_F, proud_G, inter_H, happy_K, attent_P, cont_Q, insp_T, hope_U, alert_V, calm_X, excite_Y, CalcPA)
+
+na_count <- rowSums(is.na(DPositive))
+DPositive$na_count <- na_count
+
+DPositive <- DPositive %>%
+  mutate(FinalScorePA = ifelse(na_count > 6, "Missing", CalcPA))
+```
+
+## Life Satisfaction
+### Create an index of life satisfaction by averaging the scored across all 5 items, set the final score to missing if there are Three or more items with missing values.
+
+```{r}
+D1012$CalcLS <- rowMeans(D1012[, c("life_excel", "life_satisf",  "life_import", "life_nochange",  "life_ideal")], na.rm = TRUE)
+
+DLifeSat <- D1012 %>%
+  select(hhidpn, life_ideal, life_excel, life_satisf, life_import, life_nochange, CalcLS)
+
+na_count <- rowSums(is.na(DLifeSat))
+DLifeSat$na_count <- na_count
+
+DLifeSat <- DLifeSat %>%
+  mutate(FinalScoreLS = ifelse(na_count >= 3, "Missing", CalcLS))
+```
+
+## Optimism
+### Creat an idex of optimism by averaging the scores across items Q19g, Q19h, Q19f, Q19j, Q19k, and Q19i. Set the optimism score to mssing if there is more than two items with missing values.
+
+```{r}
+#Reverse code
+D1012$opt_can_r <- 7 - D1012$opt_can
+D1012$opt_hardly_r <- 7 - D1012$opt_hardly
+D1012$opt_rarely_r <- 7 - D1012$opt_rarely
+
+#Make sure code worked correctly
+table(D1012$opt_can_r)
+table(D1012$opt_can)
+```
+
+```{r}
+#Finish creating the variable
+D1012$CalcOpt <- rowMeans(D1012[, c("opt_can_r",  "opt_always",  "opt_uncer",  "opt_more",  "opt_hardly_r",  "opt_rarely_r")], na.rm = TRUE)
+
+DOptimism <- D1012 %>%
+  select(hhidpn, opt_can_r, opt_always, opt_uncer, opt_more, opt_hardly_r, opt_rarely_r, CalcOpt)
+
+na_count <- rowSums(is.na(DOptimism))
+DOptimism$na_count <- na_count
+
+DOptimism <- DOptimism %>%
+  mutate(FinalScoreOpt = ifelse(na_count > 2, "Missing", CalcOpt))
+```
+
+## Purpose in life
+### Reverse-code items 35 b, d, e, and f and then average the scores across items to create an index of well-being (ranging from 1-6), with a high score indicating positive well-being. Set the final score to missing if there are more than three items with missing values.
+
+```{r}
+#Reverse code
+D1012$purp_oneday_r <- 7 - D1012$purp_oneday
+D1012$purp_done_r <- 7 - D1012$purp_done
+D1012$purp_nogood_r <- 7 - D1012$purp_nogood
+D1012$purp_triv_r <- 7 - D1012$purp_triv
+
+#Make sure code worked correctly
+table(D1012$purp_oneday)
+table(D1012$purp_oneday_r)
+```
+
+```{r}
+#Finish creating the variable
+D1012$CalcPurp <- rowMeans(D1012[, c("purp_enjoy", "purp_active", "purp_sense", "purp_oneday_r", "purp_done_r",  "purp_nogood_r",  "purp_triv_r")], na.rm = TRUE)
+
+DPurpose <- D1012 %>%
+  select(hhidpn,  purp_enjoy, purp_active, purp_sense, purp_triv_r, purp_nogood_r, purp_done_r, purp_oneday_r, CalcPurp)
+
+na_count <- rowSums(is.na(DPurpose))
+DPurpose$na_count <- na_count
+
+DPurpose <- DPurpose %>%
+  mutate(FinalScorePurp = ifelse(na_count > 3, "Missing", CalcPurp))
+```
+
+## Mastery
+### Create an index of Mastery by averaging the scores across items Q23a-Q23e. Set the final score to missing if there are more than three items with missing values. 
+
+```{r}
+D1012$CalcMast <- rowMeans(D1012[, c("mast_iwant",  "mast_me",  "mast_hands",  "mast_usual",  "mast_anything")], na.rm = TRUE)
+
+DMastery <- D1012 %>%
+  select(hhidpn, mast_anything, mast_usual, mast_hands, mast_me, mast_iwant, CalcMast)
+
+na_count <- rowSums(is.na(DMastery))
+DMastery$na_count <- na_count
+
+DMastery <- DMastery %>%
+  mutate(FinalScoreMast = ifelse(na_count > 3, "Missing", CalcMast))
+```
+
+## Health Mastery
+### Do not need to calculate average, just one question Q24.
+
+## Financial Mastery
+### Do not need to calculate average, just one question Q26.
+
+## Create Final data file with everything needed
+
+```{r}
+#Join multiple data frames
+list_df = list(D1012, DLifeSat, DMastery, DOptimism, DPositive, DPurpose)
+df2 <- Reduce(function(x, y) merge(x, y, by = "hhidpn"), list_df)
+```
+
+```{r}
+#Select the specific variables we want in our dataset
+PWB <- df2 %>%
+  select(hhidpn, FinalScorePA, FinalScorePurp, FinalScoreOpt, FinalScoreMast, FinalScoreLS, FinalHealth, FinalFinance)
+
+PWB[PWB == "Missing"] <- NA # Replace blank & space by NA
+```
+
+```{r}
+#Merging Two datasets together by hhidpn
+DPWB <- merge(x = PWB, y = D_long, by  = "hhidpn", all.y = TRUE )
+```
+
+## Write CSV File
+
+```{r}
+#write.csv(DPWB, "DPWB1012.csv")
+```
+
+# File 3 - Cleaning PWB Data
+
+```{r}
+#Read in data files
+Data1012 <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/DPWB1012.csv")
+
+Data0608 <-read.csv("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Analysis/Code for analyses/PWB/DPWB0608.csv")
+```
+
+```{r}
+#Create useful variables
+Data0608$year = as.numeric(Data0608$year)
+
+Data0608$gender = ifelse(Data0608$sex =="1", "Male", "Female")
+
+Data1012$year =as.numeric(Data1012$year)
+
+Data1012$gender = ifelse(Data1012$sex =="1", "Male", "Female")
+```
+
+```{r}
+#Changed PA12 to PA2014 and did so for all the PA years. Both datasets have 20710 participants
+D_wide0608 <- reshape(Data0608, 
+  varying = list(c("PA2006", "PA2008", "PA2010", "PA2012", "PA2014", "PA2016", "PA2018", "PA2020")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "wide")
+
+D_wide1012 <- reshape(Data1012, 
+  varying = list(c("PA2006", "PA2008", "PA2010", "PA2012", "PA2014", "PA2016", "PA2018", "PA2020")),
+  v.names = "PA",
+  timevar = "year", 
+  times = c("2006", "2008", "2010", "2012", "2014", "2016", "2018", "2020"), 
+  direction = "wide")
+```
+
+```{r}
+#Rename based on year group, so that we can marge later and keep track of what years we measured for the variable
+D_wide0608$Finance68 <- D_wide0608$FinalFinance
+D_wide0608$Health68 <- D_wide0608$FinalHealth
+D_wide0608$Mastery68 <- D_wide0608$FinalScoreMast
+D_wide0608$PositiveAff68 <- D_wide0608$FinalScorePA
+D_wide0608$Purpose68 <- D_wide0608$FinalScorePurp
+D_wide0608$Optimism68 <- D_wide0608$FinalScoreOpt
+D_wide0608$LS68 <- D_wide0608$FinalScoreLS
+
+#Select the specific variables we want in our dataset
+D_widef0608 <- D_wide0608 %>%
+  select(hhidpn, sex, edu, Income, age, Race, Hispanic, Wealth, diab, smoken, alc, BMI, PA2006, PA2016, gender, Finance68, Health68, Mastery68,  Purpose68, Optimism68, LS68)
+
+#Rename based on year group, so that we can marge later and keep track of what years we measured for the variable
+D_wide1012$Finance1012 <- D_wide1012$FinalFinance
+D_wide1012$Health1012 <- D_wide1012$FinalHealth
+D_wide1012$Mastery1012 <- D_wide1012$FinalScoreMast
+D_wide1012$PositiveAff1012 <- D_wide1012$FinalScorePA
+D_wide1012$Purpose1012 <- D_wide1012$FinalScorePurp
+D_wide1012$Optimism1012 <- D_wide1012$FinalScoreOpt
+D_wide1012$LS1012 <- D_wide1012$FinalScoreLS
+
+#Select the specific variables we want in our dataset
+D_widef1012 <- D_wide1012 %>%
+  select(hhidpn, sex, edu, Income, age, Race, Hispanic, Wealth, diab, smoken, alc, BMI, PA2006, PA2016, gender, Finance1012, Health1012, Mastery1012, Purpose1012, Optimism1012, LS1012)
+```
+
+```{r}
+#Perform a left join
+result <- D_widef0608 %>%
+  left_join(D_widef1012 %>% select(hhidpn, Finance1012, Health1012, Mastery1012, Purpose1012, Optimism1012, LS1012),
+            by = "hhidpn")
+
+#Check missingness
+colSums(is.na(result))/nrow(result)
+```
+
+## Filtering
+
+```{r}
+D <- result %>%
+  filter(!is.na(age) & !is.na(edu)) #Went from 20710 participants to 20623 participants
+
+D1 <- result %>%
+  filter(!is.na(age)) #Went from 20710 participants to 20710 participants
+
+D2 <- result %>%
+  filter(!is.na(edu)) #Went from 20710 participants to 20623 participants
+
+#There were a total of 87 participants with missing education, there were no participants missing age
+```
+
+## Will not use Positive Affect from the list of PWB variables because it was not measured in the 2006 collection
+
+```{r}
+#Went from 20623 participants to 6840 participants. This will be our final dataset
+D_widesub <- D2 %>%
+  filter(!is.na(Finance1012)) %>%
+  filter(!is.na(Finance68)) %>%
+  filter(!is.na(Health1012)) %>%
+  filter(!is.na(Health68)) %>%
+  filter(!is.na(Mastery1012)) %>%
+  filter(!is.na(Mastery68)) %>%
+  filter(!is.na(Purpose1012)) %>%
+  filter(!is.na(Purpose68)) %>%
+  filter(!is.na(Optimism1012)) %>%
+  filter(!is.na(Optimism68)) %>%
+  filter(!is.na(LS1012)) %>%
+  filter(!is.na(LS68)) %>% 
+  filter(!is.na(PA2016)) 
+```
+
+## Examine the number of participants in each filter of NAs
+
+```{r}
+DFinance <- D2 %>%                   #Went from 20623 participants to 7544 participants
+  filter(!is.na(Finance1012)) %>%
+  filter(!is.na(Finance68)) %>%
+  filter(!is.na(PA2016)) 
+
+DHealth <- D2 %>%                    #Went from 20623 participants to 7342 participants
+  filter(!is.na(Health1012)) %>%
+  filter(!is.na(Health68)) %>%
+  filter(!is.na(PA2016)) 
+
+DMastery <- D2 %>%                   #Went from 20623 participants to 7625 participants
+  filter(!is.na(Mastery1012)) %>%
+  filter(!is.na(Mastery68)) %>%
+  filter(!is.na(PA2016)) 
+
+DPurpose <- D2 %>%                   #Went from 20623 participants to 7516 participants
+  filter(!is.na(Purpose1012)) %>%
+  filter(!is.na(Purpose68)) %>%
+  filter(!is.na(PA2016)) 
+
+DOptimism <- D2 %>%                  #Went from 20623 participants to 7568 participants
+  filter(!is.na(Optimism1012)) %>%
+  filter(!is.na(Optimism68)) %>%
+  filter(!is.na(PA2016)) 
+
+DLS <- D2 %>%                        #Went from 20623 participants to 7620 participants
+  filter(!is.na(LS1012)) %>%
+  filter(!is.na(LS68)) %>% 
+  filter(!is.na(PA2016)) 
+```
+
+## Write CSV Files
+
+```{r}
+#write.csv(D_widesub, "D_finalPA2016.csv")
+#write.csv(D, "Dpre_FinalPA2016.csv")
+```

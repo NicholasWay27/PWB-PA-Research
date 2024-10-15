@@ -1,0 +1,254 @@
+---
+title: "Data Merging for HRS : Physical Activity Data"
+author: "Nicholas Way"
+date: "8/31/2023"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #Clear library.
+
+#Load necessary packages
+library(haven)     #For reading Stata and SAS files
+library(tidyverse) #Includes dplyr, ggplot2, and other useful packages
+
+#Ensure dplyr functions are explicitly called to avoid conflicts
+select <- dplyr::select
+filter <- dplyr::filter
+arrange <- dplyr::arrange
+rename <- dplyr::rename
+mutate <- dplyr::mutate
+summarise <- dplyr::summarise
+group_by <- dplyr::group_by
+```
+
+
+# Participants from followed form 2006 (w8) to 2020 (w15)
+## wave 8 = 2006
+## wave 9 = 2008
+## wave 10 = 2010
+## wave 11 = 2012
+## wave 12 = 2014
+## wave 13 = 2016
+## wave 14 = 2018
+## wave 15 = 2020
+
+### It takes about 3-5 minutes to open H_HRS_C.sas7bdat and randhrs1992_2018v1.sas7bdat. 
+
+```{r}
+#Read in data file
+HRS_rand <- read_sas("C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Raw data/randhrs1992_2020v1.sas7bdat") #Read data file
+
+#R7VGACTX - variable name for vigirous physical activity
+
+#R8IWBEG is "interview bieing date" in wave 8 (i.e., 2006). This was changed as dates, and using origin="1960-01-01" yielded correct year.
+#Codebook for rand HRS, "randhrs1992_2016v1.pdf", in page 107, it states that "RwIWBEG, RwIWMID, and RwIWEND are in SAS date format, which is the number of days relative to January 1, 1960.
+ 
+HRS_rand$R8IWBEG<-as.Date(HRS_rand$R8IWBEG, origin="1960-01-01")
+HRS_rand$R9IWBEG<-as.Date(HRS_rand$R9IWBEG, origin="1960-01-01")
+HRS_rand$R10IWBEG<-as.Date(HRS_rand$R10IWBEG, origin="1960-01-01")
+HRS_rand$R11IWBEG<-as.Date(HRS_rand$R11IWBEG, origin="1960-01-01")
+HRS_rand$R12IWBEG<-as.Date(HRS_rand$R12IWBEG, origin="1960-01-01")
+HRS_rand$R13IWBEG<-as.Date(HRS_rand$R13IWBEG, origin="1960-01-01")
+```
+
+# Testing whther follow up dates for tranformed successfully. It's technically 2006 Mar to 2007 Feb
+
+```{r}
+table(HRS_rand$R8IWBEG)
+```
+
+# Selecting variables
+
+```{r}
+HRS_rand$hhidpn <- as.numeric(paste(HRS_rand$HHID, HRS_rand $PN, sep = ""))
+
+#From rand HRS, I grabbed baseline variable for loneliness and needed covariates. "R8" incinerates year 2006 or baseline of this study.
+
+D = HRS_rand %>%
+  select(hhidpn, 
+         R7VGACTX, R7MDACTX, R7LTACTX,    #Physical activity variables. 
+         R8VGACTX, R8MDACTX, R8LTACTX,  
+         R9VGACTX, R9MDACTX, R9LTACTX,
+         R10VGACTX, R10MDACTX, R10LTACTX,
+         R11VGACTX, R11MDACTX, R11LTACTX,
+         R12VGACTX, R12MDACTX, R12LTACTX,
+         R13VGACTX, R13MDACTX, R13LTACTX,
+         R14VGACTX, R14MDACTX, R14LTACTX,
+         R15VGACTX, R15MDACTX, R15LTACTX,
+        R8AGEY_B,  
+         RARACEM, RAHISPAN, #Race, Hispanic or not, 
+         R1AGEY_B,R2AGEY_B,R3AGEY_B,R4AGEY_B,R5AGEY_B,R6AGEY_B,
+         R7AGEY_B,R8AGEY_B,R9AGEY_B,R10AGEY_B,R11AGEY_B,R12AGEY_B,R13AGEY_B,R14AGEY_B, #age
+        R2WTRESP, R8WTRESP, R13WTRESP, RAESTRAT,RAEHSAMP, #survey weights
+         RAGENDER,RAEDYRS,R8MSTAT,    #gender, years of education, and marrital status
+         R8IWBEG,R9IWBEG,R10IWBEG,R11IWBEG,R12IWBEG,R14IWBEG,R13IWBEG, #"interview begin dates"
+         R8IEARN,H8ATOTB,       #income and wealth                     
+         R8DIAB, R8HIBP, R8BMI, R8SMOKEN, R8DRINKD,) #health conditions: diatetes, hypertension, BMI, smoke now, drinking
+```
+
+```{r}
+#Compute missing age values for wave 8 (R8AGEY_B) using age data from other waves
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R7AGEY_B+2,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R9AGEY_B-2,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R10AGEY_B-4,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R11AGEY_B-6,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R12AGEY_B-8,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R13AGEY_B-10,D$R8AGEY_B )
+D$R8AGEY_B <- ifelse(is.na(D$R8AGEY_B), D$R14AGEY_B-12,D$R8AGEY_B )
+#This ensures that missing values are filled using the most relevant and recent available data
+```
+
+```{r}
+#Calculate physical activity levels for each wave (8 to 15)
+#Light activity (LT), moderate activity (MOD), and vigorous activity (VIG)
+#Scores are assigned based on the given criteria for each activity type
+
+D$LT8 = ifelse(D$R8LTACTX ==5, 0,
+         ifelse(D$R8LTACTX ==4, 0.5,
+         ifelse(D$R8LTACTX ==3, 1,
+         ifelse(D$R8LTACTX ==2, 4,7))))
+D$MOD8 = ifelse(D$R8MDACTX ==5, 0,
+         ifelse(D$R8MDACTX ==4, 1,
+         ifelse(D$R8MDACTX ==3, 2,
+         ifelse(D$R8MDACTX ==2, 8,14))))
+D$VIG8 = ifelse(D$R8VGACTX ==5, 0,
+         ifelse(D$R8VGACTX ==4, 2,
+         ifelse(D$R8VGACTX ==3, 4,
+         ifelse(D$R8VGACTX ==2, 16,28))))
+
+D$PA8 =  D$LT8 + D$MOD8 + D$VIG8
+
+D$LT9 = ifelse(D$R9LTACTX ==5, 0,
+         ifelse(D$R9LTACTX ==4, 0.5,
+         ifelse(D$R9LTACTX ==3, 1,
+         ifelse(D$R9LTACTX ==2, 4,7))))
+D$MOD9 = ifelse(D$R9MDACTX ==5, 0,
+         ifelse(D$R9MDACTX ==4, 1,
+         ifelse(D$R9MDACTX ==3, 2,
+         ifelse(D$R9MDACTX ==2, 8,14))))
+D$VIG9 = ifelse(D$R9VGACTX ==5, 0,
+         ifelse(D$R9VGACTX ==4, 2,
+         ifelse(D$R9VGACTX ==3, 4,
+         ifelse(D$R9VGACTX ==2, 16,28))))
+
+D$PA9 =  D$LT9 + D$MOD9 + D$VIG9
+
+D$LT10 = ifelse(D$R10LTACTX ==5, 0,
+         ifelse(D$R10LTACTX ==4, 0.5,
+         ifelse(D$R10LTACTX ==3, 1,
+         ifelse(D$R10LTACTX ==2, 4,7))))
+D$MOD10 = ifelse(D$R10MDACTX ==5, 0,
+         ifelse(D$R10MDACTX ==4, 1,
+         ifelse(D$R10MDACTX ==3, 2,
+         ifelse(D$R10MDACTX ==2, 8,14))))
+D$VIG10 = ifelse(D$R10VGACTX ==5, 0,
+         ifelse(D$R10VGACTX ==4, 2,
+         ifelse(D$R10VGACTX ==3, 4,
+         ifelse(D$R10VGACTX ==2, 16,28))))
+
+D$PA10 =  D$LT10 + D$MOD10 + D$VIG10
+
+D$LT11 = ifelse(D$R11LTACTX ==5, 0,
+         ifelse(D$R11LTACTX ==4, 0.5,
+         ifelse(D$R11LTACTX ==3, 1,
+         ifelse(D$R11LTACTX ==2, 4,7))))
+D$MOD11 = ifelse(D$R11MDACTX ==5, 0,
+         ifelse(D$R11MDACTX ==4, 1,
+         ifelse(D$R11MDACTX ==3, 2,
+         ifelse(D$R11MDACTX ==2, 8,14))))
+D$VIG11 = ifelse(D$R11VGACTX ==5, 0,
+         ifelse(D$R11VGACTX ==4, 2,
+         ifelse(D$R11VGACTX ==3, 4,
+         ifelse(D$R11VGACTX ==2, 16,28))))
+
+D$PA11 =  D$LT11 + D$MOD11 + D$VIG11
+
+D$LT12 = ifelse(D$R12LTACTX ==5, 0,
+         ifelse(D$R12LTACTX ==4, 0.5,
+         ifelse(D$R12LTACTX ==3, 1,
+         ifelse(D$R12LTACTX ==2, 4,7))))
+D$MOD12 = ifelse(D$R12MDACTX ==5, 0,
+         ifelse(D$R12MDACTX ==4, 1,
+         ifelse(D$R12MDACTX ==3, 2,
+         ifelse(D$R12MDACTX ==2, 8,14))))
+D$VIG12 = ifelse(D$R12VGACTX ==5, 0,
+         ifelse(D$R12VGACTX ==4, 2,
+         ifelse(D$R12VGACTX ==3, 4,
+         ifelse(D$R12VGACTX ==2, 16,28))))
+
+D$PA12 =  D$LT12 + D$MOD12 + D$VIG12
+
+D$LT13 = ifelse(D$R13LTACTX ==5, 0,
+         ifelse(D$R13LTACTX ==4, 0.5,
+         ifelse(D$R13LTACTX ==3, 1,
+         ifelse(D$R13LTACTX ==2, 4,7))))
+D$MOD13 = ifelse(D$R13MDACTX ==5, 0,
+         ifelse(D$R13MDACTX ==4, 1,
+         ifelse(D$R13MDACTX ==3, 2,
+         ifelse(D$R13MDACTX ==2, 8,14))))
+D$VIG13 = ifelse(D$R13VGACTX ==5, 0,
+         ifelse(D$R13VGACTX ==4, 2,
+         ifelse(D$R13VGACTX ==3, 4,
+         ifelse(D$R13VGACTX ==2, 16,28))))
+
+D$PA13 =  D$LT13 + D$MOD13 + D$VIG13
+
+D$LT14 = ifelse(D$R14LTACTX ==5, 0,
+         ifelse(D$R14LTACTX ==4, 0.5,
+         ifelse(D$R14LTACTX ==3, 1,
+         ifelse(D$R14LTACTX ==2, 4,7))))
+D$MOD14 = ifelse(D$R14MDACTX ==5, 0,
+         ifelse(D$R14MDACTX ==4, 1,
+         ifelse(D$R14MDACTX ==3, 2,
+         ifelse(D$R14MDACTX ==2, 8,14))))
+D$VIG14 = ifelse(D$R14VGACTX ==5, 0,
+         ifelse(D$R14VGACTX ==4, 2,
+         ifelse(D$R14VGACTX ==3, 4,
+         ifelse(D$R14VGACTX ==2, 16,28))))
+
+D$PA14 =  D$LT14 + D$MOD14 + D$VIG14
+
+D$LT15 = ifelse(D$R15LTACTX ==5, 0,
+         ifelse(D$R15LTACTX ==4, 0.5,
+         ifelse(D$R15LTACTX ==3, 1,
+         ifelse(D$R15LTACTX ==2, 4,7))))
+D$MOD15 = ifelse(D$R15MDACTX ==5, 0,
+         ifelse(D$R15MDACTX ==4, 1,
+         ifelse(D$R15MDACTX ==3, 2,
+         ifelse(D$R15MDACTX ==2, 8,14))))
+D$VIG15 = ifelse(D$R15VGACTX ==5, 0,
+         ifelse(D$R15VGACTX ==4, 2,
+         ifelse(D$R15VGACTX ==3, 4,
+         ifelse(D$R15VGACTX ==2, 16,28))))
+
+D$PA15 =  D$LT15 + D$MOD15 + D$VIG15
+
+#Renaming variables
+
+D <- D %>%rename(sex=RAGENDER)
+D <- D %>%rename(Race=RARACEM)
+D <- D %>%rename(Hispanic=RAHISPAN)
+D <- D %>%rename(edu=RAEDYRS)
+
+
+D <- D %>%rename(diab=R8DIAB)
+D <- D %>%rename(HTN=R8HIBP)
+D <- D %>%rename(BMI=R8BMI)
+D <- D %>%rename(age=R8AGEY_B)
+D <- D %>%rename(smoken=R8SMOKEN)
+D <- D %>%rename(alc=R8DRINKD)
+D <- D %>%rename(Income=R8IEARN)
+D <- D %>%rename(Wealth=H8ATOTB)
+D <- D %>%rename(marr_stat=R8MSTAT)
+```
+
+```{r}
+sapply(D, function(x) sum(is.na(x)))/nrow(D) #Calculate the proportion of missing values for each column in the dataframe D
+```
+
+# Write CSV File
+
+```{r}
+#write.csv(D, "C:/Users/nicho/The Pennsylvania State University/Lee, Harold - HRS PRS Projects/Nicholas/Processed data/Dpre.csv")
+```
